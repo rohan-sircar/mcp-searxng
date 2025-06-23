@@ -9,17 +9,33 @@ An [MCP server](https://modelcontextprotocol.io/introduction) implementation tha
 ## Features
 
 - **Web Search**: General queries, news, articles, with pagination.
+- **Image Search**: Find images related to search queries.
 - **Pagination**: Control which page of results to retrieve.
 - **Time Filtering**: Filter results by time range (day, month, year).
 - **Language Selection**: Filter results by preferred language.
 - **Safe Search**: Control content filtering level for search results.
+- **JSON Responses**: All tool responses return structured JSON data.
+- **Result Limiting**: Maximum of 25 results returned per query.
 
 ## Tools
 
 - **searxng_web_search**
+
   - Execute web searches with pagination
+  - Returns JSON array with fields: title, content, url, img_src, resolution, score
   - Inputs:
     - `query` (string): The search query. This string is passed to external search services.
+    - `pageno` (number, optional): Search page number, starts at 1 (default 1)
+    - `time_range` (string, optional): Filter results by time range - one of: "day", "month", "year" (default: none)
+    - `language` (string, optional): Language code for results (e.g., "en", "fr", "de") or "all" (default: "all")
+    - `safesearch` (number, optional): Safe search filter level (0: None, 1: Moderate, 2: Strict) (default: instance setting)
+
+- **searxng_image_search**
+
+  - Execute image searches with pagination
+  - Returns JSON array with fields: title, url, img_src, resolution, score
+  - Inputs:
+    - `query` (string): The search query for images
     - `pageno` (number, optional): Search page number, starts at 1 (default 1)
     - `time_range` (string, optional): Filter results by time range - one of: "day", "month", "year" (default: none)
     - `language` (string, optional): Language code for results (e.g., "en", "fr", "de") or "all" (default: "all")
@@ -62,10 +78,7 @@ npx -y @smithery/cli install @ihor-sokoliuk/server-searxng --client claude
   "mcpServers": {
     "searxng": {
       "command": "npx",
-      "args": [
-        "-y",
-        "mcp-searxng"
-      ],
+      "args": ["-y", "mcp-searxng"],
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL"
       }
@@ -141,14 +154,7 @@ Add this to your `claude_desktop_config.json`:
   "mcpServers": {
     "searxng": {
       "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e",
-        "SEARXNG_URL",
-        "mcp-searxng:latest"
-      ],
+      "args": ["run", "-i", "--rm", "-e", "SEARXNG_URL", "mcp-searxng:latest"],
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL"
       }
@@ -156,7 +162,6 @@ Add this to your `claude_desktop_config.json`:
   }
 }
 ```
-
 
 ## License
 
