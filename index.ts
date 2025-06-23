@@ -32,7 +32,8 @@ const WEB_SEARCH_TOOL: Tool = {
       },
       time_range: {
         type: "string",
-        description: "Time range of search (day, month, year)",
+        description:
+          "Time range of search (day, month, year) or yyyy-mm-dd format",
         enum: ["day", "month", "year"],
       },
       language: {
@@ -45,6 +46,52 @@ const WEB_SEARCH_TOOL: Tool = {
         type: "string",
         description:
           "Safe search filter level (0: None, 1: Moderate, 2: Strict)",
+        enum: ["0", "1", "2"],
+        default: "0",
+      },
+      categories: {
+        type: "array",
+        description: "Search categories (e.g., ['images'])",
+        items: {
+          type: "string",
+        },
+      },
+    },
+    required: ["query"],
+  },
+};
+
+const IMAGE_SEARCH_TOOL: Tool = {
+  name: "searxng_image_search",
+  description:
+    "Performs an image search using the SearXNG API. " +
+    "Use this when you need to find images related to a query.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "The search query for images",
+      },
+      pageno: {
+        type: "number",
+        description: "Search page number (starts at 1)",
+        default: 1,
+      },
+      time_range: {
+        type: "string",
+        description:
+          "Time range of search (day, month, year) or yyyy-mm-dd format",
+        enum: ["day", "month", "year"],
+      },
+      language: {
+        type: "string",
+        description: "Language code for search results",
+        default: "all",
+      },
+      safesearch: {
+        type: "string",
+        description: "Safe search filter level",
         enum: ["0", "1", "2"],
         default: "0",
       },
@@ -84,6 +131,10 @@ const server = new Server(
           description: WEB_SEARCH_TOOL.description,
           schema: WEB_SEARCH_TOOL.inputSchema,
         },
+        searxng_image_search: {
+          description: IMAGE_SEARCH_TOOL.description,
+          schema: IMAGE_SEARCH_TOOL.inputSchema,
+        },
         web_url_read: {
           description: READ_URL_TOOL.description,
           schema: READ_URL_TOOL.inputSchema,
@@ -95,6 +146,20 @@ const server = new Server(
 
 interface SearXNGWeb {
   results: Array<{
+    template?: string;
+    thumbnail_src?: string;
+    img_src?: string;
+    resolution?: string;
+    img_format?: string;
+    engine?: string;
+    parsed_url?: string[];
+    thumbnail?: string;
+    priority?: string;
+    engines?: string[];
+    positions?: number[];
+    score?: number;
+    category?: string;
+    source?: string;
     title: string;
     content: string;
     url: string;
@@ -107,6 +172,7 @@ function isSearXNGWebSearchArgs(args: unknown): args is {
   time_range?: string;
   language?: string;
   safesearch?: string;
+  categories?: string[];
 } {
   return (
     typeof args === "object" &&
@@ -121,10 +187,15 @@ async function performWebSearch(
   pageno: number = 1,
   time_range?: string,
   language: string = "all",
-  safesearch?: string
+  safesearch?: string,
+  categories?: string[]
 ) {
   const searxngUrl = process.env.SEARXNG_URL || "http://localhost:8080";
+  const preferencesToken = process.env.SEARXNG_PREFERENCES_TOKEN;
   const url = new URL(`${searxngUrl}/search`);
+  if (preferencesToken !== undefined) {
+    url.searchParams.set("preferences", preferencesToken);
+  }
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
   url.searchParams.set("pageno", pageno.toString());
@@ -144,9 +215,13 @@ async function performWebSearch(
     url.searchParams.set("safesearch", safesearch);
   }
 
+  if (categories && categories.length > 0) {
+    url.searchParams.set("categories", categories.join(","));
+  }
+
   // Prepare request options with headers
   const requestOptions: RequestInit = {
-    method: "GET"
+    method: "GET",
   };
 
   // Add basic authentication if credentials are provided
@@ -154,10 +229,12 @@ async function performWebSearch(
   const password = process.env.AUTH_PASSWORD;
 
   if (username && password) {
-    const base64Auth = Buffer.from(`${username}:${password}`).toString('base64');
+    const base64Auth = Buffer.from(`${username}:${password}`).toString(
+      "base64"
+    );
     requestOptions.headers = {
       ...requestOptions.headers,
-      'Authorization': `Basic ${base64Auth}`
+      Authorization: `Basic ${base64Auth}`,
     };
   }
 
@@ -173,15 +250,33 @@ async function performWebSearch(
 
   const data = (await response.json()) as SearXNGWeb;
 
-  const results = (data.results || []).map((result) => ({
-    title: result.title || "",
-    content: result.content || "",
-    url: result.url || "",
-  }));
+  const results = (data.results || [])
+    .map((result) => ({
+      title: result.title || "",
+      content: result.content.length > 0 ? result.content : undefined,
+      url: result.url || "",
+      // template: result.template || "",
+      // thumbnail_src: result.thumbnail_src || "",
+      img_src: result.img_src || "",
+      resolution: result.resolution || "",
+      // img_format: result.img_format || "",
+      // engine: result.engine || "",
+      // parsed_url: result.parsed_url || [],
+      // thumbnail: result.thumbnail || "",
+      // priority: result.priority || "",
+      // engines: result.engines || [],
+      // positions: result.positions || [],
+      score: result.score || 0,
+      // category: result.category || "",
+      // source: result.source || "",
+    }))
+    .slice(0, 25);
 
-  return results
-    .map((r) => `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}`)
-    .join("\n\n");
+  console.log("Count num results: ", results.length);
+
+  return JSON.stringify(results);
+  // .map((r) => `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}`)
+  // .join("\n\n");
 }
 
 async function fetchAndConvertToMarkdown(
@@ -222,7 +317,7 @@ async function fetchAndConvertToMarkdown(
 }
 // Tool handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [WEB_SEARCH_TOOL, READ_URL_TOOL],
+  tools: [WEB_SEARCH_TOOL, IMAGE_SEARCH_TOOL, READ_URL_TOOL],
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
@@ -250,6 +345,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         time_range,
         language,
         safesearch
+      );
+      return {
+        content: [{ type: "text", text: results }],
+        isError: false,
+      };
+    }
+
+    if (name === "searxng_image_search") {
+      if (!isSearXNGWebSearchArgs(args)) {
+        throw new Error("Invalid arguments for searxng_image_search");
+      }
+      const {
+        query,
+        pageno = 1,
+        time_range,
+        language = "all",
+        safesearch,
+      } = args;
+      const results = await performWebSearch(
+        query,
+        pageno,
+        time_range,
+        language,
+        safesearch,
+        ["images"] // categories
       );
       return {
         content: [{ type: "text", text: results }],
