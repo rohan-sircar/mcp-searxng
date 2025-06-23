@@ -1,6 +1,6 @@
 # SearXNG MCP Server
 
-An [MCP server](https://modelcontextprotocol.io/introduction) implementation that integrates the [SearXNG](https://docs.searxng.org) API, providing web search capabilities.
+An [MCP server](https://modelcontextprotocol.io/introduction) implementation that integrates the [SearXNG](https://docs.searxng.org) API, providing web and image search capabilities.
 
 <a href="https://glama.ai/mcp/servers/0j7jjyt7m9"><img width="380" height="200" src="https://glama.ai/mcp/servers/0j7jjyt7m9/badge" alt="SearXNG Server MCP server" /></a>
 
@@ -53,6 +53,7 @@ An [MCP server](https://modelcontextprotocol.io/introduction) implementation tha
 1. Choose a SearxNG instance from the [list of public instances](https://searx.space/) or use your local environment.
 2. Set the `SEARXNG_URL` environment variable to the instance URL.
 3. The default `SEARXNG_URL` value is `http://localhost:8080`.
+4. You can also set the preferences token using `SEARXNG_PREFERENCES_TOKEN`
 
 ### Using Authentication
 
