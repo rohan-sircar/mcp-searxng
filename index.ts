@@ -32,8 +32,7 @@ const WEB_SEARCH_TOOL: Tool = {
       },
       time_range: {
         type: "string",
-        description:
-          "Time range of search (day, month, year) or yyyy-mm-dd format",
+        description: "Time range of search (day, month, year)",
         enum: ["day", "month", "year"],
       },
       language: {
@@ -80,8 +79,7 @@ const IMAGE_SEARCH_TOOL: Tool = {
       },
       time_range: {
         type: "string",
-        description:
-          "Time range of search (day, month, year) or yyyy-mm-dd format",
+        description: "Time range of search (day, month, year)",
         enum: ["day", "month", "year"],
       },
       language: {
