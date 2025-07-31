@@ -248,33 +248,29 @@ async function performWebSearch(
 
   const data = (await response.json()) as SearXNGWeb;
 
-  const results = (data.results || [])
-    .map((result) => ({
-      title: result.title || "",
-      content: result.content.length > 0 ? result.content : undefined,
-      url: result.url || "",
-      // template: result.template || "",
-      // thumbnail_src: result.thumbnail_src || "",
-      img_src: result.img_src || "",
-      resolution: result.resolution || "",
-      // img_format: result.img_format || "",
-      // engine: result.engine || "",
-      // parsed_url: result.parsed_url || [],
-      // thumbnail: result.thumbnail || "",
-      // priority: result.priority || "",
-      // engines: result.engines || [],
-      // positions: result.positions || [],
-      score: result.score || 0,
-      // category: result.category || "",
-      // source: result.source || "",
-    }))
-    .slice(0, 25);
+  const results = (data.results || []).map((result) => ({
+    title: result.title || "",
+    content: result.content.length > 0 ? result.content : undefined,
+    url: result.url || "",
+    // template: result.template || "",
+    // thumbnail_src: result.thumbnail_src || "",
+    img_src: result.img_src || "",
+    resolution: result.resolution || "",
+    // img_format: result.img_format || "",
+    // engine: result.engine || "",
+    // parsed_url: result.parsed_url || [],
+    // thumbnail: result.thumbnail || "",
+    // priority: result.priority || "",
+    // engines: result.engines || [],
+    // positions: result.positions || [],
+    score: result.score || 0,
+    // category: result.category || "",
+    // source: result.source || "",
+  }));
 
   console.log("Count num results: ", results.length);
 
-  return JSON.stringify(results);
-  // .map((r) => `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}`)
-  // .join("\n\n");
+  return results;
 }
 
 async function fetchAndConvertToMarkdown(
@@ -344,8 +340,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         language,
         safesearch
       );
+      const formattedResults = results
+        .map(
+          (r) => `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}`
+        )
+        .join("\n\n");
       return {
-        content: [{ type: "text", text: results }],
+        content: [{ type: "text", text: formattedResults }],
         isError: false,
       };
     }
@@ -369,8 +370,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         safesearch,
         ["images"] // categories
       );
+      const cappedResults = results.slice(0, 25);
+
+      const formattedResults = cappedResults
+        .map(
+          (r) =>
+            `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}\nImage Source: ${r.img_src} \nImage Resolution: ${r.resolution}`
+        )
+        .join("\n\n");
       return {
-        content: [{ type: "text", text: results }],
+        content: [{ type: "text", text: formattedResults }],
         isError: false,
       };
     }
