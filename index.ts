@@ -10,7 +10,7 @@ import {
 import { NodeHtmlMarkdown } from "node-html-markdown";
 
 // Use a static version string that will be updated by the version script
-const packageVersion = "0.5.0";
+const packageVersion = "0.5.1";
 
 const WEB_SEARCH_TOOL: Tool = {
   name: "searxng_web_search",
