@@ -7,6 +7,7 @@ import {
   ListToolsRequestSchema,
   SetLevelRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
   LoggingLevel,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -197,6 +198,12 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       }
     ]
   };
+});
+
+// List resource templates handler
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+  logMessage(server, "debug", "Handling list_resource_templates request");
+  return { resourceTemplates: [] };
 });
 
 // Read resource handler
