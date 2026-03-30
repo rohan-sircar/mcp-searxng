@@ -1,4 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { NodeHtmlMarkdown } from "node-html-markdown";
 import { createProxyAgent, ProxyType } from "./proxy.js";
 import { logMessage } from "./logging.js";
@@ -142,21 +142,21 @@ function applyPaginationOptions(markdownContent: string, options: PaginationOpti
 }
 
 export async function fetchAndConvertToMarkdown(
-  server: Server,
+  mcpServer: McpServer,
   url: string,
   timeoutMs: number = 10000,
   paginationOptions: PaginationOptions = {}
 ) {
   const startTime = Date.now();
-  logMessage(server, "info", `Fetching URL: ${url}`);
+  logMessage(mcpServer, "info", `Fetching URL: ${url}`);
 
   // Check cache first
   const cachedEntry = urlCache.get(url);
   if (cachedEntry) {
-    logMessage(server, "info", `Using cached content for URL: ${url}`);
+    logMessage(mcpServer, "info", `Using cached content for URL: ${url}`);
     const result = applyPaginationOptions(cachedEntry.markdownContent, paginationOptions);
     const duration = Date.now() - startTime;
-    logMessage(server, "info", `Processed cached URL: ${url} (${result.length} chars in ${duration}ms)`);
+    logMessage(mcpServer, "info", `Processed cached URL: ${url} (${result.length} chars in ${duration}ms)`);
     return result;
   }
   
@@ -165,7 +165,7 @@ export async function fetchAndConvertToMarkdown(
   try {
     parsedUrl = new URL(url);
   } catch (error) {
-    logMessage(server, "error", `Invalid URL format: ${url}`);
+    logMessage(mcpServer, "error", `Invalid URL format: ${url}`);
     throw createURLFormatError(url);
   }
 
@@ -244,7 +244,7 @@ export async function fetchAndConvertToMarkdown(
     }
 
     if (!markdownContent || markdownContent.trim().length === 0) {
-      logMessage(server, "warning", `Empty content after conversion: ${url}`);
+      logMessage(mcpServer, "warning", `Empty content after conversion: ${url}`);
       // DON'T cache empty/failed conversions - return warning directly
       return createEmptyContentWarning(url, htmlContent.length, htmlContent);
     }
@@ -256,21 +256,21 @@ export async function fetchAndConvertToMarkdown(
     const result = applyPaginationOptions(markdownContent, paginationOptions);
 
     const duration = Date.now() - startTime;
-    logMessage(server, "info", `Successfully fetched and converted URL: ${url} (${result.length} chars in ${duration}ms)`);
+    logMessage(mcpServer, "info", `Successfully fetched and converted URL: ${url} (${result.length} chars in ${duration}ms)`);
     return result;
   } catch (error: any) {
     if (error.name === "AbortError") {
-      logMessage(server, "error", `Timeout fetching URL: ${url} (${timeoutMs}ms)`);
+      logMessage(mcpServer, "error", `Timeout fetching URL: ${url} (${timeoutMs}ms)`);
       throw createTimeoutError(timeoutMs, url);
     }
     // Re-throw our enhanced errors
     if (error.name === 'MCPSearXNGError') {
-      logMessage(server, "error", `Error fetching URL: ${url} - ${error.message}`);
+      logMessage(mcpServer, "error", `Error fetching URL: ${url} - ${error.message}`);
       throw error;
     }
     
     // Catch any unexpected errors
-    logMessage(server, "error", `Unexpected error fetching URL: ${url}`, error);
+    logMessage(mcpServer, "error", `Unexpected error fetching URL: ${url}`, error);
     const context: ErrorContext = { url };
     throw createUnexpectedError(error, context);
   } finally {

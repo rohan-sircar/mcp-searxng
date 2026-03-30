@@ -1,11 +1,11 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { LoggingLevel } from "@modelcontextprotocol/sdk/types.js";
 
 // Logging state
 let currentLogLevel: LoggingLevel = "info";
 
 // Logging helper function
-export function logMessage(server: Server, level: LoggingLevel, message: string, data?: unknown): void {
+export function logMessage(mcpServer: McpServer, level: LoggingLevel, message: string, data?: unknown): void {
   if (shouldLog(level)) {
     try {
       // Merge message and data together for the notification body
@@ -13,13 +13,10 @@ export function logMessage(server: Server, level: LoggingLevel, message: string,
         ? (typeof data === 'object' && data !== null ? { message, ...data } : { message, data })
         : { message };
 
-      server.notification({
-        method: "notifications/message",
-        params: {
-          level,
-          data: notificationData
-        }
-      }).catch((error) => {
+      mcpServer.sendLoggingMessage({
+        level,
+        data: notificationData
+      }).catch((error: unknown) => {
         // Silently ignore "Not connected" errors during server startup
         // This can happen when logging occurs before the transport is fully connected
         if (error instanceof Error && error.message !== "Not connected") {

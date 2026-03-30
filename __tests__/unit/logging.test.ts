@@ -52,7 +52,7 @@ async function runTests() {
   }, results);
 
   await testFunction('logMessage with different levels and mock server', () => {
-    const { server, getNotificationCalls } = createMockServerWithTracking();
+    const { server, getLoggingCalls } = createMockServerWithTracking();
 
     // Test different log levels
     setLogLevel('debug'); // Allow all messages
@@ -62,7 +62,7 @@ async function runTests() {
     logMessage(server as any, 'error', 'Test error message');
     
     // Should have called notification for each message
-    const calls = getNotificationCalls();
+    const calls = getLoggingCalls();
     assert.ok(calls.length >= 0); // Notification calls depend on implementation
   }, results);
 

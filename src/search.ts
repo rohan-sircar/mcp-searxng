@@ -1,4 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SearXNGWeb } from "./types.js";
 import { createProxyAgent, ProxyType } from "./proxy.js";
 import { logMessage } from "./logging.js";
@@ -13,7 +13,7 @@ import {
 } from "./error-handler.js";
 
 export async function performWebSearch(
-  server: Server,
+  mcpServer: McpServer,
   query: string,
   pageno: number = 1,
   time_range?: string,
@@ -30,12 +30,12 @@ export async function performWebSearch(
     safesearch ? `safesearch: ${safesearch}` : null
   ].filter(Boolean).join(", ");
   
-  logMessage(server, "info", `Starting web search: "${query}" (${searchParams})`);
+  logMessage(mcpServer, "info", `Starting web search: "${query}" (${searchParams})`);
   
   const searxngUrl = process.env.SEARXNG_URL;
 
   if (!searxngUrl) {
-    logMessage(server, "error", "SEARXNG_URL not configured");
+    logMessage(mcpServer, "error", "SEARXNG_URL not configured");
     throw createConfigurationError(
       "SEARXNG_URL not set. Set it to your SearXNG instance (e.g., http://localhost:8080 or https://search.example.com)"
     );
@@ -108,10 +108,10 @@ export async function performWebSearch(
   // Fetch with enhanced error handling
   let response: Response;
   try {
-    logMessage(server, "info", `Making request to: ${url.toString()}`);
+    logMessage(mcpServer, "info", `Making request to: ${url.toString()}`);
     response = await fetch(url.toString(), requestOptions);
   } catch (error: any) {
-    logMessage(server, "error", `Network error during search request: ${error.message}`, { query, url: url.toString() });
+    logMessage(mcpServer, "error", `Network error during search request: ${error.message}`, { query, url: url.toString() });
     const context: ErrorContext = {
       url: url.toString(),
       searxngUrl,
@@ -165,12 +165,12 @@ export async function performWebSearch(
   }));
 
   if (results.length === 0) {
-    logMessage(server, "info", `No results found for query: "${query}"`);
+    logMessage(mcpServer, "info", `No results found for query: "${query}"`);
     return createNoResultsMessage(query);
   }
 
   const duration = Date.now() - startTime;
-  logMessage(server, "info", `Search completed: "${query}" (${searchParams}) - ${results.length} results in ${duration}ms`);
+  logMessage(mcpServer, "info", `Search completed: "${query}" (${searchParams}) - ${results.length} results in ${duration}ms`);
 
   return results
     .map((r) => `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}\nRelevance Score: ${r.score.toFixed(3)}`)

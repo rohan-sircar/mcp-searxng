@@ -1,13 +1,13 @@
 import express from "express";
 import cors from "cors";
 import { randomUUID } from "crypto";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { logMessage } from "./logging.js";
 import { packageVersion } from "./index.js";
 
-export async function createHttpServer(server: Server): Promise<express.Application> {
+export async function createHttpServer(mcpServer: McpServer): Promise<express.Application> {
   const app = express();
   app.use(express.json());
   
@@ -29,15 +29,15 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
     if (sessionId && transports[sessionId]) {
       // Reuse existing transport
       transport = transports[sessionId];
-      logMessage(server, "debug", `Reusing session: ${sessionId}`);
+      logMessage(mcpServer, "debug", `Reusing session: ${sessionId}`);
     } else if (!sessionId && isInitializeRequest(req.body)) {
       // New initialization request
-      logMessage(server, "info", "Creating new HTTP session");
+      logMessage(mcpServer, "info", "Creating new HTTP session");
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sessionId) => {
           transports[sessionId] = transport;
-          logMessage(server, "debug", `Session initialized: ${sessionId}`);
+          logMessage(mcpServer, "debug", `Session initialized: ${sessionId}`);
         },
         // DNS rebinding protection disabled by default for backwards compatibility
         // For production, consider enabling:
@@ -48,17 +48,17 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
       // Clean up transport when closed
       transport.onclose = () => {
         if (transport.sessionId) {
-          logMessage(server, "debug", `Session closed: ${transport.sessionId}`);
+          logMessage(mcpServer, "debug", `Session closed: ${transport.sessionId}`);
           delete transports[transport.sessionId];
         }
       };
 
       // Connect the existing server to the new transport
-      await server.connect(transport);
+      await mcpServer.connect(transport);
     } else {
       // Invalid request
       console.warn(`⚠️  POST request rejected - invalid request:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
+        clientIP: req.ip || req.socket.remoteAddress,
         sessionId: sessionId || 'undefined',
         hasInitializeRequest: isInitializeRequest(req.body),
         userAgent: req.headers['user-agent'],
@@ -83,7 +83,7 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
       // Log header-related rejections for debugging
       if (error instanceof Error && error.message.includes('accept')) {
         console.warn(`⚠️  Connection rejected due to missing headers:`, {
-          clientIP: req.ip || req.connection.remoteAddress,
+          clientIP: req.ip || req.socket.remoteAddress,
           userAgent: req.headers['user-agent'],
           contentType: req.headers['content-type'],
           accept: req.headers['accept'],
@@ -99,7 +99,7 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     if (!sessionId || !transports[sessionId]) {
       console.warn(`⚠️  GET request rejected - missing or invalid session ID:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
+        clientIP: req.ip || req.socket.remoteAddress,
         sessionId: sessionId || 'undefined',
         userAgent: req.headers['user-agent']
       });
@@ -112,7 +112,7 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
       await transport.handleRequest(req, res);
     } catch (error) {
       console.warn(`⚠️  GET request failed:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
+        clientIP: req.ip || req.socket.remoteAddress,
         sessionId,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -125,7 +125,7 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     if (!sessionId || !transports[sessionId]) {
       console.warn(`⚠️  DELETE request rejected - missing or invalid session ID:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
+        clientIP: req.ip || req.socket.remoteAddress,
         sessionId: sessionId || 'undefined',
         userAgent: req.headers['user-agent']
       });
@@ -138,7 +138,7 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
       await transport.handleRequest(req, res);
     } catch (error) {
       console.warn(`⚠️  DELETE request failed:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
+        clientIP: req.ip || req.socket.remoteAddress,
         sessionId,
         error: error instanceof Error ? error.message : String(error)
       });

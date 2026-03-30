@@ -1,13 +1,11 @@
 /**
  * Mock Server Helper
- * 
+ *
  * Creates mock MCP server objects for testing
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-
 export interface MockServer {
-  notification: (method: string, params: any) => Promise<void>;
+  sendLoggingMessage: (params: any) => Promise<void>;
   _serverInfo: { name: string; version: string };
   _capabilities: Record<string, any>;
   connect?: (transport: any) => Promise<void>;
@@ -17,11 +15,11 @@ export interface MockServer {
  * Create a minimal mock server for testing
  */
 export function createMockServer(overrides?: Partial<MockServer>): MockServer {
-  const mockNotificationCalls: any[] = [];
-  
+  const mockLoggingCalls: any[] = [];
+
   return {
-    notification: async (method: string, params: any) => {
-      mockNotificationCalls.push({ method, params });
+    sendLoggingMessage: async (params: any) => {
+      mockLoggingCalls.push(params);
     },
     _serverInfo: { name: 'test', version: '1.0' },
     _capabilities: {},
@@ -31,17 +29,17 @@ export function createMockServer(overrides?: Partial<MockServer>): MockServer {
 }
 
 /**
- * Create a mock server that tracks notification calls
+ * Create a mock server that tracks logging calls
  */
 export function createMockServerWithTracking(): {
   server: MockServer;
-  getNotificationCalls: () => any[];
+  getLoggingCalls: () => any[];
 } {
-  const mockNotificationCalls: any[] = [];
-  
+  const mockLoggingCalls: any[] = [];
+
   const server: MockServer = {
-    notification: async (method: string, params: any) => {
-      mockNotificationCalls.push({ method, params });
+    sendLoggingMessage: async (params: any) => {
+      mockLoggingCalls.push(params);
     },
     _serverInfo: { name: 'test', version: '1.0' },
     _capabilities: {},
@@ -50,6 +48,6 @@ export function createMockServerWithTracking(): {
 
   return {
     server,
-    getNotificationCalls: () => mockNotificationCalls
+    getLoggingCalls: () => mockLoggingCalls
   };
 }

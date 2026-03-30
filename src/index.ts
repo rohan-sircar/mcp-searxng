@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
@@ -75,7 +75,7 @@ export function isWebUrlReadArgs(args: unknown): args is {
 }
 
 // Server implementation
-const server = new Server(
+const mcpServer = new McpServer(
   {
     name: "ihor-sokoliuk/mcp-searxng",
     version: packageVersion,
@@ -84,23 +84,17 @@ const server = new Server(
     capabilities: {
       logging: {},
       resources: {},
-      tools: {
-        searxng_web_search: {
-          description: WEB_SEARCH_TOOL.description,
-          schema: WEB_SEARCH_TOOL.inputSchema,
-        },
-        web_url_read: {
-          description: READ_URL_TOOL.description,
-          schema: READ_URL_TOOL.inputSchema,
-        },
-      },
+      tools: {},
     },
   }
 );
 
+// Underlying low-level server for handler registration and passing to modules
+const server = mcpServer.server;
+
 // List tools handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  logMessage(server, "debug", "Handling list_tools request");
+  logMessage(mcpServer, "debug", "Handling list_tools request");
   return {
     tools: [WEB_SEARCH_TOOL, READ_URL_TOOL],
   };
@@ -109,7 +103,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Call tool handler
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  logMessage(server, "debug", `Handling call_tool request: ${name}`);
+  logMessage(mcpServer, "debug", `Handling call_tool request: ${name}`);
 
   try {
     if (name === "searxng_web_search") {
@@ -118,7 +112,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const result = await performWebSearch(
-        server,
+        mcpServer,
         args.query,
         args.pageno,
         args.time_range,
@@ -147,7 +141,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         readHeadings: args.readHeadings,
       };
 
-      const result = await fetchAndConvertToMarkdown(server, args.url, 10000, paginationOptions);
+      const result = await fetchAndConvertToMarkdown(mcpServer, args.url, 10000, paginationOptions);
 
       return {
         content: [
@@ -161,7 +155,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
-    logMessage(server, "error", `Tool execution error: ${error instanceof Error ? error.message : String(error)}`, { 
+    logMessage(mcpServer, "error", `Tool execution error: ${error instanceof Error ? error.message : String(error)}`, { 
       tool: name, 
       args: args,
       error: error instanceof Error ? error.stack : String(error)
@@ -173,7 +167,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Logging level handler
 server.setRequestHandler(SetLevelRequestSchema, async (request) => {
   const { level } = request.params;
-  logMessage(server, "info", `Setting log level to: ${level}`);
+  logMessage(mcpServer, "info", `Setting log level to: ${level}`);
   currentLogLevel = level;
   setLogLevel(level);
   return {};
@@ -181,7 +175,7 @@ server.setRequestHandler(SetLevelRequestSchema, async (request) => {
 
 // List resources handler
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  logMessage(server, "debug", "Handling list_resources request");
+  logMessage(mcpServer, "debug", "Handling list_resources request");
   return {
     resources: [
       {
@@ -202,14 +196,14 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 
 // List resource templates handler
 server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
-  logMessage(server, "debug", "Handling list_resource_templates request");
+  logMessage(mcpServer, "debug", "Handling list_resource_templates request");
   return { resourceTemplates: [] };
 });
 
 // Read resource handler
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const { uri } = request.params;
-  logMessage(server, "debug", `Handling read_resource request for: ${uri}`);
+  logMessage(mcpServer, "debug", `Handling read_resource request for: ${uri}`);
 
   switch (uri) {
     case "config://server-config":
@@ -258,7 +252,7 @@ async function main() {
     }
 
     console.log(`Starting HTTP transport on port ${port}`);
-    const app = await createHttpServer(server);
+    const app = await createHttpServer(mcpServer);
     
     const httpServer = app.listen(port, () => {
       console.log(`HTTP server listening on port ${port}`);
@@ -288,13 +282,13 @@ async function main() {
     }
     
     const transport = new StdioServerTransport();
-    await server.connect(transport);
+    await mcpServer.connect(transport);
     
     // Log after connection is established
-    logMessage(server, "info", `MCP SearXNG Server v${packageVersion} connected via STDIO`);
-    logMessage(server, "info", `Log level: ${currentLogLevel}`);
-    logMessage(server, "info", `Environment: ${process.env.NODE_ENV || 'development'}`);
-    logMessage(server, "info", `SearXNG URL: ${process.env.SEARXNG_URL || 'not configured'}`);
+    logMessage(mcpServer, "info", `MCP SearXNG Server v${packageVersion} connected via STDIO`);
+    logMessage(mcpServer, "info", `Log level: ${currentLogLevel}`);
+    logMessage(mcpServer, "info", `Environment: ${process.env.NODE_ENV || 'development'}`);
+    logMessage(mcpServer, "info", `SearXNG URL: ${process.env.SEARXNG_URL || 'not configured'}`);
   }
 }
 
