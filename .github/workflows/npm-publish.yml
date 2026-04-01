@@ -47,9 +47,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          registry-url: 'https://registry.npmjs.org/'
 
       - name: Install mcp-publisher
-        run: npm install -g mcp-publisher
+        run: |
+          curl -sSL https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz | tar -xz -C /usr/local/bin mcp-publisher
+          chmod +x /usr/local/bin/mcp-publisher
 
       - name: Login to MCP Registry (GitHub OIDC)
         run: mcp-publisher login github-oidc
