@@ -40,12 +40,7 @@ if (staticVersionRegex.test(content)) {
 const serverJsonPath = path.join(__dirname, '..', '.mcp', 'server.json');
 const serverJson = require(serverJsonPath);
 serverJson.version = version;
-serverJson.packages = serverJson.packages.map(pkg => {
-  if (pkg.registryType === 'npm') {
-    return { ...pkg, version };
-  }
-  return pkg;
-});
+serverJson.packages = serverJson.packages.map(pkg => ({ ...pkg, version }));
 fs.writeFileSync(serverJsonPath, JSON.stringify(serverJson, null, 2) + '\n');
 console.log(`Updated version in .mcp/server.json to ${version}`);
 

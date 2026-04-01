@@ -25,14 +25,6 @@
           "format": "string"
         }
       ]
-    },
-    {
-      "registryType": "docker",
-      "identifier": "isokoliuk/mcp-searxng",
-      "version": "latest",
-      "transport": {
-        "type": "stdio"
-      }
     }
   ]
 }
