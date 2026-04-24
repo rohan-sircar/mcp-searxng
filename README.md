@@ -215,6 +215,21 @@ curl http://localhost:3000/health
 
 Set `SEARXNG_URL` to your SearXNG instance URL. All other variables are optional.
 
+### HTTP Transport Configuration
+
+When using HTTP mode (`MCP_HTTP_PORT` is set), you can configure the bind address:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MCP_HTTP_PORT` | Port to listen on (enables HTTP mode) | — |
+| `MCP_HTTP_HOST` | Bind address (use `0.0.0.0` for all interfaces) | `127.0.0.1` |
+
+Example for remote access:
+
+```bash
+MCP_HTTP_PORT=3000 MCP_HTTP_HOST=0.0.0.0 SEARXNG_URL=https://search.example.com mcp-searxng
+```
+
 Full environment variable reference: [CONFIGURATION.md](CONFIGURATION.md)
 
 ## Troubleshooting

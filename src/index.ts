@@ -268,13 +268,16 @@ async function main() {
       process.exit(1);
     }
 
+    // Bind address (default: localhost for security)
+    const httpHost = process.env.MCP_HTTP_HOST || "127.0.0.1";
+
     console.log(`Starting HTTP transport on port ${port}`);
     const app = await createHttpServer(createMcpServer);
     
-    const httpServer = app.listen(port, () => {
-      console.log(`HTTP server listening on port ${port}`);
-      console.log(`Health check: http://localhost:${port}/health`);
-      console.log(`MCP endpoint: http://localhost:${port}/mcp`);
+    const httpServer = app.listen(port, httpHost, () => {
+      console.log(`HTTP server listening on ${httpHost}:${port}`);
+      console.log(`Health check: http://${httpHost}:${port}/health`);
+      console.log(`MCP endpoint: http://${httpHost}:${port}/mcp`);
     });
 
     // Handle graceful shutdown
