@@ -31,6 +31,7 @@ Replace `YOUR_SEARXNG_INSTANCE_URL` with the URL of your SearXNG instance (e.g. 
 ## Features
 
 - **Web Search**: General queries, news, articles, with pagination.
+- **Image Search**: Find images related to search queries with random result sampling.
 - **URL Content Reading**: Advanced content extraction with pagination, section filtering, and heading extraction.
 - **Intelligent Caching**: URL content is cached with TTL (Time-To-Live) to improve performance and reduce redundant requests.
 - **Pagination**: Control which page of results to retrieve.
@@ -64,6 +65,18 @@ AI Assistant (e.g. Claude)
     - `time_range` (string, optional): Filter results by time range - one of: "day", "month", "year" (default: none)
     - `language` (string, optional): Language code for results (e.g., "en", "fr", "de") or "all" (default: "all")
     - `safesearch` (number, optional): Safe search filter level (0: None, 1: Moderate, 2: Strict) (default: instance setting)
+
+- **searxng_image_search**
+  - Execute image searches with pagination and result limiting
+  - Returns formatted image results with title, image URL, thumbnail, source URL, source, dimensions, and relevance score
+  - Note: SearXNG does not support a server-side result limit, so this tool uses a `num` parameter to truncate results client-side after fetching. Results are randomly shuffled before truncation to provide diverse sampling.
+  - Inputs:
+    - `query` (string): The search query for images
+    - `pageno` (number, optional): Search page number, starts at 1 (default 1)
+    - `num` (number, optional): Maximum number of results to return (client-side limit). SearXNG does not support a server-side limit, so this truncates results after fetching. Default: 16, Max: 100
+    - `time_range` (string, optional): Filter results by time range - one of: "day", "month", "year" (default: none)
+    - `language` (string, optional): Language code for results (e.g., "en", "fr", "de") or "all" (default: "all")
+    - `safesearch` (number, optional): Safe search filter level (0: None, 1: Moderate, 2: Strict) (default: 0)
 
 - **web_url_read**
   - Read and convert the content from a URL to markdown with advanced content extraction options
