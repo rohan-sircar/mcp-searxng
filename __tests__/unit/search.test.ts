@@ -7,7 +7,7 @@
  */
 
 import { strict as assert } from 'node:assert';
-import { performWebSearch } from '../../src/search.js';
+import { performWebSearch, performImageSearch } from '../../src/search.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
 import { createMockServer } from '../helpers/mock-server.js';
 import { FetchMocker, createMockFetch, createCapturingMockFetch } from '../helpers/mock-fetch.js';
@@ -397,6 +397,219 @@ async function runTests() {
     }
 
     assert.ok(capturedOptions?.dispatcher, 'Expected dispatcher to be set when proxy configured');
+
+    fetchMocker.restore();
+    envManager.restore();
+  }, results);
+
+  // ========== Image Search Tests ==========
+  
+  await testFunction('Image search: Error handling for missing SEARXNG_URL', async () => {
+    envManager.delete('SEARXNG_URL');
+    
+    const mockServer = createMockServer();
+    
+    try {
+      await performImageSearch(mockServer as any, 'test query');
+      assert.fail('Should have thrown configuration error');
+    } catch (error: any) {
+      assert.ok(error.message.includes('SEARXNG_URL not configured') || error.message.includes('Configuration'));
+    }
+    
+    envManager.restore();
+  }, results);
+
+  await testFunction('Image search: URL construction with categories=images', async () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    
+    const mockServer = createMockServer();
+    const { mockFetch, getCapturedUrl, getCapturedOptions } = createCapturingMockFetch();
+
+    fetchMocker.mock(async (url, options) => {
+      const result = await mockFetch(url, options);
+      throw new Error('MOCK_NETWORK_ERROR');
+    });
+
+    try {
+      await performImageSearch(mockServer as any, 'cat images', 1, 10, 'day', 'en', 0);
+    } catch (error: any) {
+      // Expected to fail with mock error
+    }
+
+    // Verify URL construction
+    const url = new URL(getCapturedUrl());
+    assert.ok(url.pathname.includes('/search'));
+    assert.ok(url.searchParams.get('q') === 'cat images');
+    assert.ok(url.searchParams.get('pageno') === '1');
+    assert.ok(url.searchParams.get('categories') === 'images');
+    assert.ok(url.searchParams.get('time_range') === 'day');
+    assert.ok(url.searchParams.get('language') === 'en');
+    assert.ok(url.searchParams.get('safesearch') === '0');
+    assert.ok(url.searchParams.get('format') === 'json');
+
+    fetchMocker.restore();
+    envManager.restore();
+  }, results);
+
+  await testFunction('Image search: Successful search with image-specific fields', async () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    
+    const mockServer = createMockServer();
+    const mockFetch = createMockFetch({
+      json: {
+        results: [
+          {
+            title: 'Test Image 1',
+            img_src: 'https://example.com/image1.jpg',
+            thumbnail_src: 'https://example.com/thumb1.jpg',
+            url: 'https://example.com/page1',
+            source: 'Example Site',
+            engine: 'google',
+            height: 800,
+            width: 1200,
+            score: 0.95
+          },
+          {
+            title: 'Test Image 2',
+            img_src: 'https://example.com/image2.jpg',
+            thumbnail_src: 'https://example.com/thumb2.jpg',
+            url: 'https://example.com/page2',
+            source: 'Another Site',
+            engine: 'bing',
+            height: 600,
+            width: 800,
+            score: 0.87
+          }
+        ]
+      }
+    });
+
+    fetchMocker.mock(mockFetch);
+
+    const result = await performImageSearch(mockServer as any, 'test query');
+    assert.ok(typeof result === 'string');
+    assert.ok(result.includes('Test Image 1'));
+    assert.ok(result.includes('https://example.com/image1.jpg'));
+    assert.ok(result.includes('https://example.com/thumb1.jpg'));
+    assert.ok(result.includes('https://example.com/page1'));
+    assert.ok(result.includes('Example Site'));
+    assert.ok(result.includes('1200x800'));
+    assert.ok(result.includes('0.950'));
+
+    fetchMocker.restore();
+    envManager.restore();
+  }, results);
+
+  await testFunction('Image search: Client-side limit truncates results', async () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    
+    const mockServer = createMockServer();
+    const mockFetch = createMockFetch({
+      json: {
+        results: Array.from({ length: 25 }, (_, i) => ({
+          title: `Image ${i + 1}`,
+          img_src: `https://example.com/image${i + 1}.jpg`,
+          thumbnail_src: `https://example.com/thumb${i + 1}.jpg`,
+          url: `https://example.com/page${i + 1}`,
+          source: 'Source',
+          engine: 'google',
+          height: 500,
+          width: 500,
+          score: 0.5
+        }))
+      }
+    });
+
+    fetchMocker.mock(mockFetch);
+
+    // Request only 5 results
+    const result = await performImageSearch(mockServer as any, 'test query', 1, 5);
+    assert.ok(typeof result === 'string');
+    
+    // Should contain first 5 images
+    assert.ok(result.includes('Image 1'));
+    assert.ok(result.includes('Image 5'));
+    
+    // Should NOT contain images beyond the limit
+    assert.ok(!result.includes('Image 6'));
+    assert.ok(!result.includes('Image 25'));
+
+    fetchMocker.restore();
+    envManager.restore();
+  }, results);
+
+  await testFunction('Image search: Default limit is 16', async () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    
+    const mockServer = createMockServer();
+    const mockFetch = createMockFetch({
+      json: {
+        results: Array.from({ length: 25 }, (_, i) => ({
+          title: `Image ${i + 1}`,
+          img_src: `https://example.com/image${i + 1}.jpg`,
+          thumbnail_src: `https://example.com/thumb${i + 1}.jpg`,
+          url: `https://example.com/page${i + 1}`,
+          source: 'Source',
+          engine: 'google',
+          height: 500,
+          width: 500,
+          score: 0.5
+        }))
+      }
+    });
+
+    fetchMocker.mock(mockFetch);
+
+    // Request with default num (should be 16)
+    const result = await performImageSearch(mockServer as any, 'test query');
+    assert.ok(typeof result === 'string');
+    
+    // Should contain first 16 images
+    assert.ok(result.includes('Image 1'));
+    assert.ok(result.includes('Image 16'));
+    
+    // Should NOT contain images beyond default limit
+    assert.ok(!result.includes('Image 17'));
+
+    fetchMocker.restore();
+    envManager.restore();
+  }, results);
+
+  await testFunction('Image search: Empty results handling', async () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    
+    const mockServer = createMockServer();
+    const mockFetch = createMockFetch({ json: { results: [] } });
+
+    fetchMocker.mock(mockFetch);
+
+    const result = await performImageSearch(mockServer as any, 'test query');
+    assert.ok(typeof result === 'string');
+    assert.ok(result.includes('No results found'));
+
+    fetchMocker.restore();
+    envManager.restore();
+  }, results);
+
+  await testFunction('Image search: Server error handling', async () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    
+    const mockServer = createMockServer();
+    const mockFetch = createMockFetch({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      body: 'Server error'
+    });
+
+    fetchMocker.mock(mockFetch);
+
+    try {
+      await performImageSearch(mockServer as any, 'test query');
+      assert.fail('Should have thrown server error');
+    } catch (error: any) {
+      assert.ok(error.message.includes('500') || error.message.includes('Server Error'));
+    }
 
     fetchMocker.restore();
     envManager.restore();

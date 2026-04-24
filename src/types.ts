@@ -111,3 +111,90 @@ export const READ_URL_TOOL: Tool = {
     required: ["url"],
   },
 };
+
+export interface SearXNGImageResult {
+  title: string;
+  img_src: string;
+  thumbnail_src: string;
+  url: string;
+  source: string;
+  engine: string;
+  height: number;
+  width: number;
+  score: number;
+}
+
+export interface SearXNGImage {
+  results: SearXNGImageResult[];
+}
+
+export function isSearXNGImageSearchArgs(args: unknown): args is {
+  query: string;
+  pageno?: number;
+  num?: number;
+  time_range?: string;
+  language?: string;
+  safesearch?: number;
+} {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    "query" in args &&
+    typeof (args as { query: string }).query === "string"
+  );
+}
+
+export const IMAGE_SEARCH_TOOL: Tool = {
+  name: "searxng_image_search",
+  description:
+    "Performs an image search using the SearXNG API. " +
+    "Use this when you need to find images related to a query. " +
+    "Note: SearXNG returns a fixed number of results per page (~20). Use the 'num' parameter to limit results returned to the LLM, and 'pageno' to retrieve additional pages.",
+  annotations: {
+    readOnlyHint: true,
+    openWorldHint: true,
+  },
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "The search query for images",
+      },
+      pageno: {
+        type: "number",
+        description: "Search page number (starts at 1)",
+        default: 1,
+      },
+      num: {
+        type: "number",
+        description:
+          "Maximum number of results to return (client-side limit). " +
+          "SearXNG does not support a server-side limit, so this truncates results after fetching. " +
+          "Default: 16, Max: 100",
+        default: 16,
+        minimum: 1,
+        maximum: 100,
+      },
+      time_range: {
+        type: "string",
+        description: "Time range of search (day, month, year)",
+        enum: ["day", "month", "year"],
+      },
+      language: {
+        type: "string",
+        description:
+          "Language code for search results (e.g., 'en', 'fr', 'de')",
+        default: "all",
+      },
+      safesearch: {
+        type: "number",
+        description:
+          "Safe search filter level (0: None, 1: Moderate, 2: Strict)",
+        enum: [0, 1, 2],
+        default: 0,
+      },
+    },
+    required: ["query"],
+  },
+};

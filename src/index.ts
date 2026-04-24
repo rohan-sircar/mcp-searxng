@@ -12,9 +12,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 // Import modularized functionality
-import { WEB_SEARCH_TOOL, READ_URL_TOOL, isSearXNGWebSearchArgs } from "./types.js";
+import { WEB_SEARCH_TOOL, READ_URL_TOOL, IMAGE_SEARCH_TOOL, isSearXNGWebSearchArgs, isSearXNGImageSearchArgs } from "./types.js";
 import { logMessage, setLogLevel, getCurrentLogLevel } from "./logging.js";
-import { performWebSearch } from "./search.js";
+import { performWebSearch, performImageSearch } from "./search.js";
 import { fetchAndConvertToMarkdown } from "./url-reader.js";
 import { createConfigResource, createHelpResource } from "./resources.js";
 import { createHttpServer } from "./http-server.js";
@@ -94,7 +94,7 @@ export function createMcpServer(): McpServer {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     logMessage(mcpServer, "debug", "Handling list_tools request");
     return {
-      tools: [WEB_SEARCH_TOOL, READ_URL_TOOL],
+      tools: [WEB_SEARCH_TOOL, IMAGE_SEARCH_TOOL, READ_URL_TOOL],
     };
   });
 
@@ -113,6 +113,29 @@ export function createMcpServer(): McpServer {
           mcpServer,
           args.query,
           args.pageno,
+          args.time_range,
+          args.language,
+          args.safesearch
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: result,
+            },
+          ],
+        };
+      } else if (name === "searxng_image_search") {
+        if (!isSearXNGImageSearchArgs(args)) {
+          throw new Error("Invalid arguments for image search");
+        }
+
+        const result = await performImageSearch(
+          mcpServer,
+          args.query,
+          args.pageno ?? 1,
+          args.num ?? 16,
           args.time_range,
           args.language,
           args.safesearch
