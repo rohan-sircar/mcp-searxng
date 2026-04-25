@@ -23,7 +23,7 @@ export function createConfigResource() {
       currentLogLevel: getCurrentLogLevel()
     },
     capabilities: {
-      tools: ["searxng_web_search", "web_url_read"],
+      tools: ["searxng_web_search", "searxng_image_search", "web_url_read"],
       logging: true,
       resources: true,
       transports: process.env.MCP_HTTP_PORT ? ["stdio", "http"] : ["stdio"]
@@ -51,7 +51,20 @@ Performs web searches using the configured SearXNG instance.
 - \`language\` (optional): Language code like "en", "fr", "de" (default: "all")
 - \`safesearch\` (optional): Safe search level - 0 (none), 1 (moderate), 2 (strict)
 
-### 2. web_url_read
+### 2. searxng_image_search
+Performs image searches using the configured SearXNG instance.
+
+**Parameters:**
+- \`query\` (required): The search query for images
+- \`pageno\` (optional): Page number (default: 1)
+- \`num\` (optional): Maximum number of results to return (client-side limit, default: 16, max: 100)
+- \`time_range\` (optional): Filter by time - "day", "month", or "year"
+- \`language\` (optional): Language code like "en", "fr", "de" (default: "all")
+- \`safesearch\` (optional): Safe search level - 0 (none), 1 (moderate), 2 (strict) (default: 0)
+
+**Note:** Results are randomly shuffled before truncation to provide diverse sampling.
+
+### 3. web_url_read
 Reads and converts web page content to Markdown format.
 
 **Parameters:**
