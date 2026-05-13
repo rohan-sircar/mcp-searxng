@@ -36,8 +36,8 @@ app = FastAPI(
 )
 
 _model: Optional[SentenceTransformer] = None
-_MODEL_NAME: str = os.environ.get("EMBEDDING_MODEL", "jinaai/jina-embeddings-v5-omni-nano-retrieval")
-_MODALITY: str = os.environ.get("EMBEDDING_MODALITY", "vision")
+_MODEL_NAME: str = ""
+_MODALITY: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ _MODALITY: str = os.environ.get("EMBEDDING_MODALITY", "vision")
 def load_model() -> SentenceTransformer:
     """Load the jina-embeddings-v5-omni-nano-retrieval model with selective modality."""
     logger.info(
-        "Loading model '%s' with modality='%s' ...", _MODEL_NAME, _MODALITY
+        "Loading model '%s' with modality='%s' ...", _MODEL_NAME or "jinaai/jina-embeddings-v5-omni-nano-retrieval", _MODALITY or "vision"
     )
     model = SentenceTransformer(
         _MODEL_NAME,
@@ -245,12 +245,12 @@ def main():
     )
     parser.add_argument(
         "--model",
-        default=os.environ.get("EMBEDDING_MODEL", _MODEL_NAME),
+        default=os.environ.get("EMBEDDING_MODEL", "jinaai/jina-embeddings-v5-omni-nano-retrieval"),
         help="Model name / HuggingFace repo (default: EMBEDDING_MODEL env or jinaai/jina-embeddings-v5-omni-nano-retrieval)",
     )
     parser.add_argument(
         "--modality",
-        default=os.environ.get("EMBEDDING_MODALITY", _MODALITY),
+        default=os.environ.get("EMBEDDING_MODALITY", "vision"),
         choices=["text", "vision", "audio", "omni"],
         help="Selective modality to load (default: EMBEDDING_MODALITY env or 'vision')",
     )
@@ -270,6 +270,10 @@ def main():
     global _MODEL_NAME, _MODALITY
     _MODEL_NAME = args.model
     _MODALITY = args.modality
+
+    if not _MODEL_NAME or not _MODALITY:
+        logger.error("MODEL_NAME and MODALITY must be set via CLI args or env vars")
+        sys.exit(1)
 
     try:
         model = load_model()

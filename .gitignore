@@ -41,3 +41,5 @@ Thumbs.db
 
 # registry credentials
 .mcpregistry*
+
+embedding-venv
