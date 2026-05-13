@@ -304,6 +304,19 @@ async function main() {
       process.exit(1);
     }
 
+    /*
+    node -e "
+    process.env.EMBEDDING_SERVICE_URL = 'http://rohan-desktop:8083/v1';
+    process.env.EMBEDDING_MODEL = 'jina-embeddings-v5-omni-nano-retrieval';
+    import('./dist/embedding-service.js').then(m => {
+      m.callVisionEmbeddingService('iVBORw0KGgoAAAANSUhEUg==', 'test prompt')
+        .then(r => console.log('OK:', r.embedding.length))
+        .catch(e => console.error('FAIL:', e.message));
+    });
+   "
+ 
+    */
+
     // Bind address (default: localhost for security)
     const httpHost = process.env.MCP_HTTP_HOST || "127.0.0.1";
 
@@ -311,7 +324,7 @@ async function main() {
     const app = await createHttpServer(createMcpServer);
     
     if (process.env.EMBEDDING_SERVICE_URL) {
-      logStartup(`Vision image search enabled: EMBEDDING_SERVICE_URL=${process.env.EMBEDDING_SERVICE_URL} EMBEDDING_MODEL=${process.env.EMBEDDING_MODEL || "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M"}`);
+      logStartup(`Vision image search enabled: EMBEDDING_SERVICE_URL=${process.env.EMBEDDING_SERVICE_URL} EMBEDDING_MODEL=${process.env.EMBEDDING_MODEL || "jina-embeddings-v5-omni-nano-retrieval"}`);
     } else {
       logStartup("Vision image search disabled: EMBEDDING_SERVICE_URL not set");
     }

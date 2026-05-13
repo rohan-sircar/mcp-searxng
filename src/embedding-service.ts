@@ -1,6 +1,6 @@
 const EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL!;
 const EMBEDDING_SERVICE_API_KEY = process.env.EMBEDDING_SERVICE_API_KEY || "none";
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M";
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "jina-embeddings-v5-omni-small-retrieval";
 
 function logEmbedding(message: string, data?: any): void {
   const ts = new Date().toISOString();
