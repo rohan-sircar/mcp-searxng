@@ -25,6 +25,10 @@ const packageVersion = "1.0.3";
 // Export the version for use in other modules
 export { packageVersion };
 
+function logStartup(message: string): void {
+  process.stderr.write(`[mcp-searxng:${new Date().toISOString()}] ${message}\n`);
+}
+
 // Type guard for URL reading args
 export function isWebUrlReadArgs(args: unknown): args is {
   url: string;
@@ -305,6 +309,12 @@ async function main() {
 
     console.log(`Starting HTTP transport on port ${port}`);
     const app = await createHttpServer(createMcpServer);
+    
+    if (process.env.EMBEDDING_SERVICE_URL) {
+      logStartup(`Vision image search enabled: EMBEDDING_SERVICE_URL=${process.env.EMBEDDING_SERVICE_URL} EMBEDDING_MODEL=${process.env.EMBEDDING_MODEL || "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M"}`);
+    } else {
+      logStartup("Vision image search disabled: EMBEDDING_SERVICE_URL not set");
+    }
     
     const httpServer = app.listen(port, httpHost, () => {
       console.log(`HTTP server listening on ${httpHost}:${port}`);
