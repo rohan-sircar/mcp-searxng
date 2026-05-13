@@ -92,13 +92,14 @@ export async function callVisionEmbeddingService(
   const url = `${EMBEDDING_SERVICE_URL}/embeddings`;
   const bodySize = imageBase64.length;
   const requestBody = {
-    content: [
+    model: EMBEDDING_MODEL,
+    content: "Image: [img-1].\n" + (prompt || ""),
+    image_data: [
       {
-        prompt_string: prompt || "<__media__>",
-        multimodal_data: [imageBase64],
+        id: 1,
+        data: imageBase64,
       },
     ],
-    model: EMBEDDING_MODEL,
   };
 
   logEmbedding("VISION EMBEDDING REQUEST", `url=${url} model=${EMBEDDING_MODEL} imageBase64Size=${bodySize} prompt=${prompt || "<__media__>"}`);
@@ -141,13 +142,14 @@ export async function callVisionEmbeddingService(
     throw new Error("Embedding service returned invalid response: expected array with at least one result");
   }
 
-  if (!data[0].embedding) {
+  if (!data[0].embedding || !Array.isArray(data[0].embedding)) {
     logEmbedding("VISION EMBEDDING MISSING EMBEDDING", `keys=${Object.keys(data[0]).join(",")}`);
     throw new Error("Embedding service returned invalid response: missing 'embedding' field");
   }
 
-  logEmbedding("VISION EMBEDDING SUCCESS", `embeddingLen=${data[0].embedding.length} time_eval=${data[0].time_eval}`);
-  return data[0] as VisionEmbeddingResult;
+  const embedding = Array.isArray(data[0].embedding[0]) ? data[0].embedding[0] : data[0].embedding;
+  logEmbedding("VISION EMBEDDING SUCCESS", `embeddingLen=${embedding.length}`);
+  return { embedding, prompt: "", time_eval: 0, time_prompt: 0, tokens_count: 0 } as VisionEmbeddingResult;
 }
 
 export function cosineSimilarity(a: number[], b: number[]): number {
