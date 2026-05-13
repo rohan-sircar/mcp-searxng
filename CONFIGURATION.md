@@ -41,6 +41,7 @@ Required for the `searxng_image_search_vision` tool. The MCP server calls a llam
 |---|---|---|---|
 | `EMBEDDING_SERVICE_URL` | Yes (for vision search) | â€” | llama.cpp server URL with `/v1` suffix (e.g. `http://localhost:8080/v1`) |
 | `EMBEDDING_SERVICE_API_KEY` | No | `none` | API key for the embedding service (set to `none` if no auth is configured) |
+| `EMBEDDING_MODEL` | No | `jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M` | GGUF model identifier for the embedding service. Must match a model loaded on the llama.cpp server |
 
 **Starting llama.cpp server:**
 
@@ -118,7 +119,8 @@ Complete MCP client configuration with every variable. Mix and match as needed â
         "MCP_HTTP_ALLOW_PRIVATE_URLS": "false",
         "MCP_HTTP_EXPOSE_FULL_CONFIG": "false",
         "EMBEDDING_SERVICE_URL": "http://localhost:8080/v1",
-        "EMBEDDING_SERVICE_API_KEY": "none"
+        "EMBEDDING_SERVICE_API_KEY": "none",
+        "EMBEDDING_MODEL": "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M"
       }
     }
   }

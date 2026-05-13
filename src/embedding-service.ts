@@ -1,5 +1,6 @@
 const EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL!;
 const EMBEDDING_SERVICE_API_KEY = process.env.EMBEDDING_SERVICE_API_KEY || "none";
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M";
 
 interface EmbeddingRequest {
   input: string | string[];
@@ -26,13 +27,11 @@ export interface VisionEmbeddingResult {
 
 export async function callTextEmbeddingService(
   input: string | string[],
-  model?: string
 ): Promise<EmbeddingResult[]> {
-  const embeddingModel = model || "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M";
 
   const requestBody: EmbeddingRequest = {
     input,
-    model: embeddingModel,
+    model: EMBEDDING_MODEL,
   };
 
   const response = await fetch(`${EMBEDDING_SERVICE_URL}/embeddings`, {
@@ -63,9 +62,7 @@ export async function callTextEmbeddingService(
 export async function callVisionEmbeddingService(
   imageBase64: string,
   prompt?: string,
-  model?: string
 ): Promise<VisionEmbeddingResult> {
-  const embeddingModel = model || "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M";
 
   const response = await fetch(`${EMBEDDING_SERVICE_URL}/embeddings`, {
     method: "POST",
@@ -80,7 +77,7 @@ export async function callVisionEmbeddingService(
           multimodal_data: [imageBase64],
         },
       ],
-      model: embeddingModel,
+      model: EMBEDDING_MODEL,
     }),
   });
 
