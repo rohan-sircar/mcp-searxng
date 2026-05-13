@@ -12,6 +12,7 @@ import io
 import logging
 import os
 import sys
+import torch
 from typing import Any, List, Optional, Union
 
 from fastapi import FastAPI, HTTPException, Response
@@ -127,8 +128,31 @@ def _encode_image(base64_str: str) -> List[float]:
             status_code=400, detail=f"Failed to decode image: {exc}"
         )
 
-    vec = _model.encode([image])
-    return vec[0].tolist()
+    # The jina-embeddings-v5-omni model's sentence-transformers .encode() has a bug
+    # in its custom transformers module where it passes a single PIL Image to the
+    # processor instead of a list, causing "object of type 'Image' has no len()".
+    # Use the raw transformers API as shown in the model card:
+    #   proc = AutoProcessor.from_pretrained(repo, trust_remote_code=True)
+    #   i_vec = model.embed(**proc(images=Image.open("photo.jpg"), text="<image>", return_tensors="pt").to(model.device))
+    try:
+        from transformers import AutoProcessor, AutoModel
+
+        repo = _model.model_name_or_path if hasattr(_model, "model_name_or_path") else "jinaai/jina-embeddings-v5-omni-nano-retrieval"
+        processor = AutoProcessor.from_pretrained(repo, trust_remote_code=True)
+        raw_model = AutoModel.from_pretrained(
+            repo, trust_remote_code=True,
+            model_kwargs={"modality": _MODALITY},
+        ).to(_model.device)
+
+        inputs = processor(images=image, text="<image>", return_tensors="pt")
+        with torch.no_grad():
+            vec = raw_model.embed(**inputs.to(raw_model.device))
+            vec = vec.cpu().numpy()
+    except Exception:
+        # Fallback: try sentence-transformers encode (may work for some versions)
+        vec = _model.encode([image])[0]
+
+    return vec.tolist()
 
 
 # ---------------------------------------------------------------------------
