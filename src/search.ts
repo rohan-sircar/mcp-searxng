@@ -548,7 +548,9 @@ export async function performVisionImageSearch(
       return { title: result.title || "", similarity: titleSimilarity };
     });
 
-  logMessage(mcpServer, "info", `Text stage similarities: ${allTextSimilarities.map(s => `"${s.title}": ${s.similarity.toFixed(4)}`).join(", ")}`);
+  const textSimStr = allTextSimilarities.map(s => `"${s.title}": ${s.similarity.toFixed(4)}`).join(", ");
+  logMessage(mcpServer, "info", `Text stage similarities: ${textSimStr}`);
+  console.log(`[search:${new Date().toISOString()}] TEXT STAGE SIMILARITIES: ${textSimStr}`);
 
   const scoredResults: Array<{ result: SearXNGImageResult; similarity: number }> = allTextSimilarities
     .sort((a, b) => b.similarity - a.similarity)
@@ -619,7 +621,9 @@ export async function performVisionImageSearch(
     logMessage(mcpServer, "info", `Vision stage: candidate ${i + 1}/${scoredResults.length} processed (${imageSimilarity >= clampedMinScore ? "PASSED" : "REJECTED"})`);
   }
 
-  logMessage(mcpServer, "info", `Vision stage similarities: ${allVisionSimilarities.map(s => `"${s.title}": ${s.similarity.toFixed(4)}`).join(", ")}`);
+  const visionSimStr = allVisionSimilarities.map(s => `"${s.title}": ${s.similarity.toFixed(4)}`).join(", ");
+  logMessage(mcpServer, "info", `Vision stage similarities: ${visionSimStr}`);
+  console.log(`[search:${new Date().toISOString()}] VISION STAGE SIMILARITIES: ${visionSimStr}`);
 
   logMessage(mcpServer, "info", `Vision stage: ${visionResults.length} of ${scoredResults.length} candidates passed threshold`);
 
