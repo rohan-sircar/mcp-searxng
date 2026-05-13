@@ -128,29 +128,30 @@ def _encode_image(base64_str: str) -> List[float]:
             status_code=400, detail=f"Failed to decode image: {exc}"
         )
 
-    # The jina-embeddings-v5-omni model's sentence-transformers .encode() has a bug
-    # in its custom transformers module where it passes a single PIL Image to the
-    # processor instead of a list, causing "object of type 'Image' has no len()".
-    # Use the raw transformers API as shown in the model card:
-    #   proc = AutoProcessor.from_pretrained(repo, trust_remote_code=True)
-    #   i_vec = model.embed(**proc(images=Image.open("photo.jpg"), text="<image>", return_tensors="pt").to(model.device))
+    # The jina-embeddings-v5-omni processor expects `images` as a list, not a
+    # single PIL Image. Also the model weights are bf16 by default which causes
+    # "Got unsupported ScalarType BFloat16" inside embed(). Cast to float32.
     try:
-        from transformers import AutoProcessor, AutoModel
+        proc = _model.processor
+        raw_model = _model.transformers_model
 
-        repo = _model.model_name_or_path if hasattr(_model, "model_name_or_path") else "jinaai/jina-embeddings-v5-omni-nano-retrieval"
-        processor = AutoProcessor.from_pretrained(repo, trust_remote_code=True)
-        raw_model = AutoModel.from_pretrained(
-            repo, trust_remote_code=True,
-            model_kwargs={"modality": _MODALITY},
-        ).to(_model.device)
+        # Ensure model is in float32 to avoid BFloat16 issues in embed()
+        if raw_model.dtype != torch.float32:
+            raw_model = raw_model.to(torch.float32)
 
-        inputs = processor(images=image, text="<image>", return_tensors="pt")
+        inputs = proc(images=[image], text="<image>", return_tensors="pt")
         with torch.no_grad():
-            vec = raw_model.embed(**inputs.to(raw_model.device))
-            vec = vec.cpu().numpy()
-    except Exception:
-        # Fallback: try sentence-transformers encode (may work for some versions)
-        vec = _model.encode([image])[0]
+            vec = raw_model.embed(**{k: v.to(raw_model.device) for k, v in inputs.items()})
+            vec = vec[0].cpu().numpy()
+    except Exception as exc:
+        logger.warning("Raw transformers path failed (%s), falling back", exc)
+        try:
+            vec = _model.encode([image])[0]
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to encode image with any method: {exc}",
+            )
 
     return vec.tolist()
 
