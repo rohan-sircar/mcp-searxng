@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY requirements.txt .
+COPY embedding-service.py .
+RUN pip install --no-cache-dir -r requirements.txt
+
+EXPOSE 8080
+CMD ["python", "embedding-service.py", "--modality", "vision", "--port", "8080"]

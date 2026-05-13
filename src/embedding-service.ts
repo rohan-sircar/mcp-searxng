@@ -1,6 +1,6 @@
 const EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL!;
 const EMBEDDING_SERVICE_API_KEY = process.env.EMBEDDING_SERVICE_API_KEY || "none";
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "jina-embeddings-v5-omni-small-retrieval";
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "jinaai/jina-embeddings-v5-omni-nano-retrieval";
 
 function logEmbedding(message: string, data?: any): void {
   const ts = new Date().toISOString();
@@ -14,7 +14,13 @@ interface EmbeddingRequest {
 }
 
 interface EmbeddingResponse {
-  data: Array<{ embedding: number[] }>;
+  data: Array<{ index?: number; embedding: number[]; object?: string }>;
+  model: string;
+  object: string;
+}
+
+interface VisionEmbeddingResponse {
+  data: Array<{ index?: number; embedding: number[] | number[][]; object?: string }>;
   model: string;
   object: string;
 }
@@ -92,14 +98,10 @@ export async function callVisionEmbeddingService(
   const url = `${EMBEDDING_SERVICE_URL}/embeddings`;
   const bodySize = imageBase64.length;
   const requestBody = {
-    model: EMBEDDING_MODEL,
-    content: "Image: [img-1].\n" + (prompt || ""),
-    image_data: [
-      {
-        id: 1,
-        data: imageBase64,
-      },
+    input: [
+      { image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
     ],
+    model: EMBEDDING_MODEL,
   };
 
   logEmbedding("VISION EMBEDDING REQUEST", `url=${url} model=${EMBEDDING_MODEL} imageBase64Size=${bodySize} prompt=${prompt || "<__media__>"}`);
@@ -129,25 +131,26 @@ export async function callVisionEmbeddingService(
     );
   }
 
-  let data: any;
+  let data: VisionEmbeddingResponse;
   try {
-    data = await response.json();
+    data = await response.json() as VisionEmbeddingResponse;
   } catch (error: any) {
     logEmbedding("VISION EMBEDDING JSON PARSE ERROR", `message=${error.message}`);
     throw new Error(`Failed to parse vision embedding response: ${error.message}`);
   }
 
-  if (!Array.isArray(data) || data.length === 0) {
-    logEmbedding("VISION EMBEDDING INVALID RESPONSE", `isArray=${Array.isArray(data)} length=${Array.isArray(data) ? data.length : "N/A"}`);
-    throw new Error("Embedding service returned invalid response: expected array with at least one result");
+  if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+    logEmbedding("VISION EMBEDDING INVALID RESPONSE", `hasData=${!!data.data} isArray=${Array.isArray(data?.data)} length=${data?.data ? data.data.length : "N/A"}`);
+    throw new Error("Embedding service returned invalid response: expected { data: [...] } with at least one result");
   }
 
-  if (!data[0].embedding || !Array.isArray(data[0].embedding)) {
-    logEmbedding("VISION EMBEDDING MISSING EMBEDDING", `keys=${Object.keys(data[0]).join(",")}`);
+  if (!data.data[0].embedding || !Array.isArray(data.data[0].embedding)) {
+    logEmbedding("VISION EMBEDDING MISSING EMBEDDING", `keys=${Object.keys(data.data[0]).join(",")}`);
     throw new Error("Embedding service returned invalid response: missing 'embedding' field");
   }
 
-  const embedding = Array.isArray(data[0].embedding[0]) ? data[0].embedding[0] : data[0].embedding;
+  const raw = data.data[0].embedding;
+  const embedding = Array.isArray(raw[0]) ? (raw[0] as number[]) : (raw as number[]);
   const preview = `[${embedding.slice(0, 5).map(v => v.toFixed(4)).join(", ")}, ..., ${embedding.slice(-3).map(v => v.toFixed(4)).join(", ")}]`;
   logEmbedding("VISION EMBEDDING SUCCESS", `embeddingLen=${embedding.length} preview=${preview}`);
   return { embedding, prompt: "", time_eval: 0, time_prompt: 0, tokens_count: 0 } as VisionEmbeddingResult;

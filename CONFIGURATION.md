@@ -35,29 +35,42 @@ Interface-specific proxies take priority over global proxies for their respectiv
 
 ## Embedding Service (Vision Image Search)
 
-Required for the `searxng_image_search_vision` tool. The MCP server calls a llama.cpp server running `jina-embeddings-v5-omni-small-retrieval-GGUF` via its OpenAI-compatible `/embeddings` endpoint.
+Required for the `searxng_image_search_vision` tool. The MCP server calls a Python FastAPI server running `jina-embeddings-v5-omni-nano-retrieval` via its OpenAI-compatible `/v1/embeddings` endpoint.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `EMBEDDING_SERVICE_URL` | Yes (for vision search) | — | llama.cpp server URL with `/v1` suffix (e.g. `http://localhost:8080/v1`) |
-| `EMBEDDING_SERVICE_API_KEY` | No | `none` | API key for the embedding service (set to `none` if no auth is configured) |
-| `EMBEDDING_MODEL` | No | `jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M` | GGUF model identifier for the embedding service. Must match a model loaded on the llama.cpp server |
+| `EMBEDDING_SERVICE_URL` | Yes (for vision search) | — | Python embedding server URL with `/v1` suffix (e.g. `http://localhost:8080/v1`) |
+| `EMBEDDING_SERVICE_API_KEY` | No | `none` | API key for the embedding service |
+| `EMBEDDING_MODEL` | No | `jinaai/jina-embeddings-v5-omni-nano-retrieval` | Model name for sentence-transformers |
+| `EMBEDDING_MODALITY` | No | `vision` | Selective modality: `text`, `vision`, `audio`, or `omni` (default: `vision` loads text + vision only) |
 
-**Starting llama.cpp server:**
+**Setup:**
 
 ```bash
-# Download and start with vision support
-llama-server \
-  -m jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M \
-  --mmproj jina-embeddings-v5-omni-small-retrieval-vision-mmproj-F16.gguf \
-  --embedding --pooling last \
-  --host 127.0.0.1 --port 8080
+# Create and activate virtual environment (recommended)
+python3 -m venv embedding-venv
+source embedding-venv/bin/activate
 
+# Install PyTorch with ROCm support (for AMD GPU)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2
+
+# Install other dependencies
+pip install -r requirements.txt
+
+# Run the embedding service (recommended with selective modality)
+python embedding-service.py --model jinaai/jina-embeddings-v5-omni-nano-retrieval --modality vision --port 8080
+
+# Or with env vars
+EMBEDDING_MODEL=jinaai/jina-embeddings-v5-omni-nano-retrieval EMBEDDING_MODALITY=vision EMBEDDING_PORT=8080 python embedding-service.py
+
+# First run downloads ~2GB (model weights + safetensors)
 # Then set:
 # EMBEDDING_SERVICE_URL=http://localhost:8080/v1
 ```
 
-**Model:** `jina-embeddings-v5-omni-small-retrieval-GGUF` (~396MB Q4_K_M) + vision mmproj (F16, separate file)
+**Model:** `jinaai/jina-embeddings-v5-omni-nano-retrieval` (~0.95B params, ~2GB weights, 768-dim embeddings)
+
+**Requirements:** Python 3.10+, ~4GB VRAM with `modality="vision"` (GPU recommended), ~2GB disk for model weights
 
 **Note:** The embedding service is an optional dependency. If it is unavailable, `searxng_image_search_vision` will fail with a clear error message, but all other tools continue to function normally.
 
@@ -120,7 +133,7 @@ Complete MCP client configuration with every variable. Mix and match as needed �
         "MCP_HTTP_EXPOSE_FULL_CONFIG": "false",
         "EMBEDDING_SERVICE_URL": "http://localhost:8080/v1",
         "EMBEDDING_SERVICE_API_KEY": "none",
-        "EMBEDDING_MODEL": "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M"
+        "EMBEDDING_MODEL": "jinaai/jina-embeddings-v5-omni-nano-retrieval"
       }
     }
   }

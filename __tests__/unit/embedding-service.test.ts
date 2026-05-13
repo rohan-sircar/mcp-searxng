@@ -134,7 +134,7 @@ async function runTests() {
       // expected
     }
 
-    assert.strictEqual(capturedBody.model, 'jina-embeddings-v5-omni-small-retrieval');
+    assert.strictEqual(capturedBody.model, 'jinaai/jina-embeddings-v5-omni-nano-retrieval');
 
     fetchMocker.restore();
     envManager.restore();
@@ -253,7 +253,7 @@ async function runTests() {
     envManager.restore();
   }, results);
 
-  await testFunction('Vision embedding: Request uses [img-1] placeholder format', async () => {
+  await testFunction('Vision embedding: Request uses OpenAI image_url format', async () => {
     envManager.set('EMBEDDING_SERVICE_URL', 'http://test-embedding.example.com/v1');
     
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
@@ -270,14 +270,16 @@ async function runTests() {
       // expected
     }
 
-    assert.ok(capturedBody.content.startsWith('Image: [img-1].'), `Expected [img-1] placeholder in content, got: ${capturedBody.content}`);
-    assert.ok(capturedBody.content.includes('\n'), `Expected newline in content`);
+    assert.ok(Array.isArray(capturedBody.input), 'Expected input to be an array');
+    assert.strictEqual(capturedBody.input.length, 1);
+    assert.ok('image_url' in capturedBody.input[0], 'Expected image_url in input item');
+    assert.ok(capturedBody.input[0].image_url.url.startsWith('data:image/jpeg;base64,'), 'Expected data URI prefix');
 
     fetchMocker.restore();
     envManager.restore();
   }, results);
 
-  await testFunction('Vision embedding: Request includes image_data with id and data fields', async () => {
+  await testFunction('Vision embedding: Request includes image_url with base64 data', async () => {
     envManager.set('EMBEDDING_SERVICE_URL', 'http://test-embedding.example.com/v1');
     
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
@@ -294,10 +296,10 @@ async function runTests() {
       // expected
     }
 
-    assert.ok(Array.isArray(capturedBody.image_data));
-    assert.strictEqual(capturedBody.image_data.length, 1);
-    assert.strictEqual(capturedBody.image_data[0].id, 1);
-    assert.strictEqual(capturedBody.image_data[0].data, 'testimagebase64data');
+    assert.ok(Array.isArray(capturedBody.input));
+    assert.strictEqual(capturedBody.input.length, 1);
+    assert.ok('image_url' in capturedBody.input[0]);
+    assert.strictEqual(capturedBody.input[0].image_url.url, 'data:image/jpeg;base64,testimagebase64data');
 
     fetchMocker.restore();
     envManager.restore();
@@ -328,7 +330,7 @@ async function runTests() {
     envManager.restore();
   }, results);
 
-  await testFunction('Vision embedding: Request includes custom prompt appended after placeholder', async () => {
+  await testFunction('Vision embedding: Default model name is jina-embeddings-v5-omni-nano-retrieval', async () => {
     envManager.set('EMBEDDING_SERVICE_URL', 'http://test-embedding.example.com/v1');
     
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
@@ -340,13 +342,12 @@ async function runTests() {
     });
 
     try {
-      await callVisionEmbeddingService('base64data', 'What is this?');
+      await callVisionEmbeddingService('base64data');
     } catch {
       // expected
     }
 
-    assert.ok(capturedBody.content.includes('What is this?'), `Expected custom prompt in content, got: ${capturedBody.content}`);
-    assert.ok(capturedBody.content.startsWith('Image: [img-1].\n'), `Expected placeholder prefix in content`);
+    assert.strictEqual(capturedBody.model, 'jinaai/jina-embeddings-v5-omni-nano-retrieval');
 
     fetchMocker.restore();
     envManager.restore();
@@ -358,9 +359,11 @@ async function runTests() {
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
     
     const mockFetch = createMockFetch({
-      json: [
-        { embedding: [0.1, 0.2, 0.3] }
-      ]
+      json: {
+        data: [
+          { embedding: [0.1, 0.2, 0.3] }
+        ]
+      }
     });
 
     fetchMocker.mock(mockFetch);
@@ -380,9 +383,11 @@ async function runTests() {
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
     
     const mockFetch = createMockFetch({
-      json: [
-        { embedding: [[0.1, 0.2, 0.3]] }
-      ]
+      json: {
+        data: [
+          { embedding: [[0.1, 0.2, 0.3]] }
+        ]
+      }
     });
 
     fetchMocker.mock(mockFetch);
@@ -402,9 +407,11 @@ async function runTests() {
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
     
     const mockFetch = createMockFetch({
-      json: [
-        { embedding: [0.1, 0.2, 0.3] }
-      ]
+      json: {
+        data: [
+          { embedding: [0.1, 0.2, 0.3] }
+        ]
+      }
     });
 
     fetchMocker.mock(mockFetch);
@@ -420,44 +427,44 @@ async function runTests() {
     envManager.restore();
   }, results);
 
-  await testFunction('Vision embedding: Error on invalid response (not an array)', async () => {
+  await testFunction('Vision embedding: Error on invalid response (missing data wrapper)', async () => {
     envManager.set('EMBEDDING_SERVICE_URL', 'http://test-embedding.example.com/v1');
     
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
     
     const mockFetch = createMockFetch({
-      json: { not: 'an array' }
+      json: { notData: [] }
     });
 
     fetchMocker.mock(mockFetch);
 
     try {
       await callVisionEmbeddingService('base64data');
-      assert.fail('Should have thrown error for non-array response');
+      assert.fail('Should have thrown error for missing data wrapper');
     } catch (error: any) {
-      assert.ok(error.message.includes('invalid') || error.message.includes('array'));
+      assert.ok(error.message.includes('invalid') || error.message.includes('data'));
     }
 
     fetchMocker.restore();
     envManager.restore();
   }, results);
 
-  await testFunction('Vision embedding: Error on empty array response', async () => {
+  await testFunction('Vision embedding: Error on empty data array response', async () => {
     envManager.set('EMBEDDING_SERVICE_URL', 'http://test-embedding.example.com/v1');
     
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
     
     const mockFetch = createMockFetch({
-      json: []
+      json: { data: [] }
     });
 
     fetchMocker.mock(mockFetch);
 
     try {
       await callVisionEmbeddingService('base64data');
-      assert.fail('Should have thrown error for empty array response');
+      assert.fail('Should have thrown error for empty data array response');
     } catch (error: any) {
-      assert.ok(error.message.includes('invalid') || error.message.includes('array'));
+      assert.ok(error.message.includes('invalid') || error.message.includes('data'));
     }
 
     fetchMocker.restore();
@@ -470,7 +477,7 @@ async function runTests() {
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
     
     const mockFetch = createMockFetch({
-      json: [{ not_embedding: [0.1, 0.2] }]
+      json: { data: [{ not_embedding: [0.1, 0.2] }] }
     });
 
     fetchMocker.mock(mockFetch);
@@ -492,7 +499,7 @@ async function runTests() {
     const { callVisionEmbeddingService } = await import('../../src/embedding-service.js');
     
     const mockFetch = createMockFetch({
-      json: [{ embedding: 'not-an-array' }]
+      json: { data: [{ embedding: 'not-an-array' }] }
     });
 
     fetchMocker.mock(mockFetch);

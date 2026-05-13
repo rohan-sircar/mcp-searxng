@@ -1,0 +1,14 @@
+[Unit]
+Description=Jina Embedding Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/mcp-searxng
+ExecStart=/path/to/mcp-searxng/embedding-venv/bin/python embedding-service.py --model jinaai/jina-embeddings-v5-omni-nano-retrieval --modality vision --port 8080
+Environment=PATH=/path/to/mcp-searxng/embedding-venv/bin
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
