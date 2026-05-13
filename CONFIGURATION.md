@@ -33,6 +33,33 @@ Interface-specific proxies take priority over global proxies for their respectiv
 | `URL_READER_HTTP_PROXY` / `URL_READER_HTTPS_PROXY` | No | — | Proxy for `web_url_read` only |
 | `NO_PROXY` | No | — | Comma-separated bypass list (e.g. `localhost,.internal,example.com`) |
 
+## Embedding Service (Vision Image Search)
+
+Required for the `searxng_image_search_vision` tool. The MCP server calls a llama.cpp server running `jina-embeddings-v5-omni-small-retrieval-GGUF` via its OpenAI-compatible `/embeddings` endpoint.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `EMBEDDING_SERVICE_URL` | Yes (for vision search) | — | llama.cpp server URL with `/v1` suffix (e.g. `http://localhost:8080/v1`) |
+| `EMBEDDING_SERVICE_API_KEY` | No | `none` | API key for the embedding service (set to `none` if no auth is configured) |
+
+**Starting llama.cpp server:**
+
+```bash
+# Download and start with vision support
+llama-server \
+  -m jina-embeddings-v5-omni-small-retrieval-GGUF:Q4_K_M \
+  --mmproj jina-embeddings-v5-omni-small-retrieval-vision-mmproj-F16.gguf \
+  --embedding --pooling last \
+  --host 127.0.0.1 --port 8080
+
+# Then set:
+# EMBEDDING_SERVICE_URL=http://localhost:8080/v1
+```
+
+**Model:** `jina-embeddings-v5-omni-small-retrieval-GGUF` (~396MB Q4_K_M) + vision mmproj (F16, separate file)
+
+**Note:** The embedding service is an optional dependency. If it is unavailable, `searxng_image_search_vision` will fail with a clear error message, but all other tools continue to function normally.
+
 ## HTTP Transport
 
 By default the server communicates over STDIO. Set `MCP_HTTP_PORT` to enable HTTP mode instead.
@@ -89,7 +116,9 @@ Complete MCP client configuration with every variable. Mix and match as needed �
         "MCP_HTTP_ALLOWED_ORIGINS": "https://app.example.com",
         "MCP_HTTP_ALLOWED_HOSTS": "app.example.com",
         "MCP_HTTP_ALLOW_PRIVATE_URLS": "false",
-        "MCP_HTTP_EXPOSE_FULL_CONFIG": "false"
+        "MCP_HTTP_EXPOSE_FULL_CONFIG": "false",
+        "EMBEDDING_SERVICE_URL": "http://localhost:8080/v1",
+        "EMBEDDING_SERVICE_API_KEY": "none"
       }
     }
   }

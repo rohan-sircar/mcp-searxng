@@ -83,7 +83,7 @@ When `categories=images` is passed to the SearXNG `/search` endpoint, results ha
 - The only pagination parameter available is `pageno` (page number, 1-indexed)
 - `max_page` is a server-side configuration, not an API parameter
 
-**Implication for this tool:** Since SearXNG returns all results from its underlying engines (which can aggregate 20-50+ images from Google, Bing, DuckDuckGo, etc. into a single response), the MCP server must implement **client-side limiting**. The tool will include a `num` parameter that truncates results after fetching, preventing context overflow for LLM consumers.
+**Implication for this tool:** Since SearXNG returns ~100 results for image search (aggregated from Google Images, Bing, Unsplash, etc.), the MCP server must implement **client-side limiting**. The tools include a `num` parameter that truncates results after fetching, preventing context overflow for LLM consumers.
 
 ---
 
@@ -93,14 +93,17 @@ When `categories=images` is passed to the SearXNG `/search` endpoint, results ha
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `src/types.ts` | **Modify** | Add `IMAGE_SEARCH_TOOL` definition, `SearXNGImage` type, `isSearXNGImageSearchArgs` type guard |
-| `src/search.ts` | **Modify** | Add `performImageSearch()` function (reuse most of `performWebSearch()` logic, add `categories=images`) |
-| `src/index.ts` | **Modify** | Register the new tool in `ListToolsRequestSchema` and `CallToolRequestSchema` |
-| `__tests__/unit/search.test.ts` | **Create** | Add tests for image search |
+| `src/types.ts` | **Modify** | Add `IMAGE_SEARCH_TOOL` definition, `VISION_IMAGE_SEARCH_TOOL` definition, `SearXNGImage` type, type guards |
+| `src/search.ts` | **Modify** | Add `performImageSearch()` (relevance-based) and `performVisionImageSearch()` (embedding-based) functions |
+| `src/embedding-service.ts` | **Create** | Call llama.cpp `/embeddings` endpoint, cosine similarity, image download |
+| `src/index.ts` | **Modify** | Register both tools in `ListToolsRequestSchema` and `CallToolRequestSchema` |
+| `__tests__/unit/search.test.ts` | **Create** | Add tests for both image search variants |
 
 ### 3.2 Detailed Changes
 
-#### Step 1: `src/types.ts` — Add Image Search Tool Definition
+#### Step 1: `src/types.ts` — Add Image Search Tool Definitions
+
+**`IMAGE_SEARCH_TOOL`** (relevance-based, updated description):
 
 ```typescript
 // Add after READ_URL_TOOL definition
@@ -185,6 +188,68 @@ export const IMAGE_SEARCH_TOOL: Tool = {
     required: ["query"],
   },
 };
+```
+
+#### Step 1.5: `src/embedding-service.ts` — Embedding Service Client
+
+A lightweight client for calling the llama.cpp embedding server via its OpenAI-compatible API:
+
+```typescript
+// Core functions:
+// 1. callTextEmbeddingService(input, model?) → EmbeddingResult[]
+//    - POST to /embeddings with OpenAI-compatible format
+//    - Text: {"input": "Query: <text>", "model": "..."}
+//    - Supports batching for multiple inputs
+//
+// 2. callVisionEmbeddingService(imageBase64, prompt?, model?) → VisionEmbeddingResult
+//    - POST to /embeddings with multimodal format
+//    - {"content": [{"prompt_string": "<__media__>", "multimodal_data": [base64]}]}
+//
+// 3. cosineSimilarity(a, b) → number
+//    - Dot product of two vectors divided by product of their norms
+//
+// 4. downloadImageAsBase64(url) → Promise<string>
+//    - Fetch image, return base64-encoded string
+```
+
+#### Step 1.6: `src/types.ts` — Add Vision Image Search Tool Definition
+
+```typescript
+export const VISION_IMAGE_SEARCH_TOOL: Tool = {
+  name: "searxng_image_search_vision",
+  description:
+    "Performs an image search using the SearXNG API with multimodal embedding-based filtering. " +
+    "Two-stage pipeline: text-based title filtering followed by vision-based image content analysis. " +
+    "Slower but more semantically relevant results. " +
+    "Requires EMBEDDING_SERVICE_URL environment variable pointing to a running llama.cpp server " +
+    "with jina-embeddings-v5-omni-small-retrieval-GGUF. " +
+    "Note: SearXNG returns ~100 results for image search with no server-side limit.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "The search query for images" },
+      pageno: { type: "number", description: "Search page number (starts at 1)", default: 1 },
+      topK: { type: "number", description: "Candidates after text-stage filtering. Default: 25, Max: 100", default: 25, minimum: 5, maximum: 100 },
+      minScore: { type: "number", description: "Min cosine similarity for vision-stage. Default: 0.15, Range: 0-1", default: 0.15, minimum: 0, maximum: 1 },
+      num: { type: "number", description: "Max results to return. Default: 16, Max: 100", default: 16, minimum: 1, maximum: 100 },
+      time_range: { type: "string", enum: ["day", "month", "year"] },
+      language: { type: "string", default: "all" },
+      safesearch: { type: "number", enum: [0, 1, 2], default: 0 },
+    },
+    required: ["query"],
+  },
+};
+
+export function isSearXNGVisionImageSearchArgs(args: unknown): args is {
+  query: string;
+  pageno?: number;
+  topK?: number;
+  minScore?: number;
+  num?: number;
+  time_range?: string;
+  language?: string;
+  safesearch?: number;
+} { /* ... validation ... */ }
 ```
 
 #### Step 2: `src/search.ts` — Add `performImageSearch()` Function
@@ -371,9 +436,85 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 ```
 
+**Add handler for vision image search (after regular image search handler):**
+
+```typescript
+} else if (name === "searxng_image_search_vision") {
+  if (!isSearXNGVisionImageSearchArgs(args)) {
+    throw new Error("Invalid arguments for vision image search");
+  }
+
+  if (!process.env.EMBEDDING_SERVICE_URL) {
+    throw new Error(
+      "EMBEDDING_SERVICE_URL is not set. " +
+      "Start a llama.cpp server with jina-embeddings-v5-omni-small-retrieval-GGUF and set the environment variable."
+    );
+  }
+
+  const result = await performVisionImageSearch(
+    mcpServer,
+    args.query,
+    args.pageno ?? 1,
+    args.topK ?? 25,
+    args.minScore ?? 0.15,
+    args.num ?? 16,
+    args.time_range,
+    args.language,
+    args.safesearch
+  );
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: result,
+      },
+    ],
+  };
+```
+
+**Import the new tool, type guard, and search function:**
+
+```typescript
+// Change line 15 from:
+import { WEB_SEARCH_TOOL, READ_URL_TOOL, IMAGE_SEARCH_TOOL, isSearXNGWebSearchArgs, isSearXNGImageSearchArgs } from "./types.js";
+
+// To:
+import { WEB_SEARCH_TOOL, READ_URL_TOOL, IMAGE_SEARCH_TOOL, VISION_IMAGE_SEARCH_TOOL, isSearXNGWebSearchArgs, isSearXNGImageSearchArgs, isSearXNGVisionImageSearchArgs } from "./types.js";
+
+// And import the new search function:
+import { performWebSearch, performImageSearch, performVisionImageSearch } from "./search.js";
+```
+
 ---
 
 ## 4. Architecture Diagram
+
+```
+                     ┌─────────────────────────────────────┐
+                     │          src/index.ts               │
+                     │   createMcpServer() factory         │
+                     │                                     │
+                     │  ListTools ─────────────────────┐   │
+                     │  CallTool ──────────────────────┤   │
+                     └─────────────────────────────────┼───┘
+                                                       │
+                  ┌────────────────────────────────────┴────────────────────────────────────┐
+                  ▼                                         ▼                                 ▼
+    ┌──────────────────────────┐    ┌──────────────────────────┐    ┌──────────────────────────┐
+    │       src/types.ts        │    │       src/search.ts      │    │  src/embedding-service.ts│
+    │  ┌─────────────────────┐ │    │  ┌─────────────────────┐ │    │                          │
+    │  │ WEB_SEARCH_TOOL     │ │    │  │ performWebSearch()    │ │    │  callTextEmbedding()   │
+    │  │ IMAGE_SEARCH_TOOL   │ │    │  │ performImageSearch()  │ │    │  callVisionEmbedding() │
+    │  │ VISION_IMAGE_TOOL   │ │    │  │ performVisionSearch() │ │    │  cosineSimilarity()    │
+    │  │ READ_URL_TOOL       │ │    │  └─────────────────────┘ │    │  downloadImageAsBase64()│
+    │  │ isSearXNG*Args()    │ │    │                          │    │                          │
+    │  └─────────────────────┘ │    │  Uses: proxy.ts          │    │  External: llama.cpp     │
+    │                           │    │  error-handler.ts        │    │  jina-embeddings-v5-omni │
+    │  Defines Tool schemas &  │    │  logging.ts              │    │  server (/embeddings)    │
+    │  type guards             │    │  tls-config.ts           │    │                          │
+    └──────────────────────────┘    └──────────────────────────┘    └──────────────────────────┘
+```
 
 ```
                     ┌─────────────────────────────────────┐
@@ -438,14 +579,49 @@ Note that `isSearXNGImageSearchArgs()` has the **exact same shape** as `isSearXN
 
 The existing `SearXNGWeb` interface in `src/types.ts` is minimal (only `title`, `content`, `url`, `score`). The new `SearXNGImage` interface should be separate since image results have completely different fields.
 
+### 5.5 Two-Tool Architecture: Relevance vs Vision
+
+Instead of a single tool with a mode parameter, we expose two separate tools:
+
+| | `searxng_image_search` | `searxng_image_search_vision` |
+|---|---|---|
+| **Method** | Sort by SearXNG score, shuffle, truncate | Two-stage embedding filtering |
+| **Latency** | ~50ms | ~3-9s (with GPU) |
+| **Quality** | Good, biased toward top engines | Semantically relevant |
+| **Dependencies** | None | llama.cpp server + model |
+| **Use case** | Typical/fast searches | Disambiguation, quality-critical |
+
+This gives the AI assistant clear signal about what to expect — it can choose based on context (speed vs quality).
+
+### 5.6 Embedding Service as Optional Dependency
+
+The embedding service (llama.cpp server) is **optional infrastructure**:
+- If `EMBEDDING_SERVICE_URL` is not set, `searxng_image_search_vision` fails immediately with a clear error
+- If the service is down, the tool fails with a descriptive error mentioning the root cause
+- All other tools (web search, regular image search, URL read) continue working normally
+- This isolation is critical — the embedding service failure must not affect the rest of the MCP server
+
 ---
 
 ## 6. Testing Strategy
 
 Add tests to `__tests__/unit/search.test.ts`:
 
-1. **Successful image search** — Mock SearXNG response with image results
+### Relevance-based image search (`performImageSearch`)
+1. **Successful search** — Mock SearXNG response with image results
 2. **Empty results** — Verify `createNoResultsMessage()` is returned
+3. **Invalid arguments** — Verify type guard rejection
+4. **Network error** — Verify proper error wrapping
+5. **Image-specific fields** — Verify `img_src`, `thumbnail_src`, dimensions are included
+6. **Fisher-Yates shuffle** — Verify results are shuffled (not sorted)
+
+### Vision-based image search (`performVisionImageSearch`)
+7. **Missing env var** — Verify immediate error before any work
+8. **Text stage filtering** — Mock embedding service, verify top-K selection
+9. **Vision stage filtering** — Mock embedding service, verify similarity threshold
+10. **Embedding service down** — Verify clear error message
+11. **Image download failure** — Verify individual image failure doesn't crash pipeline
+12. **No results pass threshold** — Verify `createNoResultsMessage()` is returned
 3. **Invalid arguments** — Verify type guard rejection
 4. **Network error** — Verify proper error wrapping
 5. **Image-specific fields** — Verify `img_src`, `thumbnail_src`, dimensions are included
@@ -456,12 +632,14 @@ Add tests to `__tests__/unit/search.test.ts`:
 
 | File | Lines Changed | Complexity |
 |------|---------------|------------|
-| `src/types.ts` | +60 (new tool def, type, type guard) | Low |
-| `src/search.ts` | +90 (new function) | Medium |
-| `src/index.ts` | +25 (import, register, handler) | Low |
-| `__tests__/unit/search.test.ts` | +80 (new tests) | Medium |
+| `src/types.ts` | +100 (two tool defs, two type guards) | Low |
+| `src/search.ts` | +180 (shuffle fix + vision search function) | High |
+| `src/embedding-service.ts` | +120 (new file: embedding client) | Medium |
+| `src/index.ts` | +40 (imports, register, handler) | Low |
+| `CONFIGURATION.md` | +25 (new section for embedding service) | Low |
+| `__tests__/unit/search.test.ts` | +150 (both search variants) | Medium |
 
-**Total: ~255 lines of new code across 4 files.**
+**Total: ~615 lines of new/changed code across 6 files.**
 
 ---
 
@@ -473,5 +651,7 @@ Add tests to `__tests__/unit/search.test.ts`:
 | SearXNG API incompatibility | Low | `categories=images` is a standard SearXNG parameter |
 | Proxy/auth conflicts | Very Low | Reuses exact same infrastructure as web search |
 | TypeScript type errors | Low | New types are well-scoped to image results |
+| Embedding service unavailable | Medium | Tool fails fast with clear error; other tools unaffected |
+| llama.cpp model not found | Low | Clear error message + documentation on how to start server |
 
-This is a **low-risk, additive change** that introduces a new tool without modifying any existing functionality.
+This is a **low-risk, additive change** that introduces two new tools without modifying any existing functionality. The embedding service is an optional dependency with proper error isolation.

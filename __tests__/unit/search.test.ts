@@ -526,13 +526,17 @@ async function runTests() {
     const result = await performImageSearch(mockServer as any, 'test query', 1, 5);
     assert.ok(typeof result === 'string');
     
-    // Should contain first 5 images
-    assert.ok(result.includes('Image 1'));
-    assert.ok(result.includes('Image 5'));
+    // Count how many image entries are in the result (each separated by "\n\n")
+    const entries = result.split('\n\n').filter(e => e.startsWith('Title: Image'));
+    assert.strictEqual(entries.length, 5, `Expected 5 results, got ${entries.length}`);
     
-    // Should NOT contain images beyond the limit
-    assert.ok(!result.includes('Image 6'));
-    assert.ok(!result.includes('Image 25'));
+    // All returned images should be from the original set
+    for (const entry of entries) {
+      const match = entry.match(/Title: Image (\d+)/);
+      assert.ok(match, `Entry does not match expected format: ${entry}`);
+      const num = parseInt(match[1]);
+      assert.ok(num >= 1 && num <= 25, `Image number ${num} is out of range`);
+    }
 
     fetchMocker.restore();
     envManager.restore();
@@ -564,12 +568,9 @@ async function runTests() {
     const result = await performImageSearch(mockServer as any, 'test query');
     assert.ok(typeof result === 'string');
     
-    // Should contain first 16 images
-    assert.ok(result.includes('Image 1'));
-    assert.ok(result.includes('Image 16'));
-    
-    // Should NOT contain images beyond default limit
-    assert.ok(!result.includes('Image 17'));
+    // Count how many image entries are in the result
+    const entries = result.split('\n\n').filter(e => e.startsWith('Title: Image'));
+    assert.strictEqual(entries.length, 16, `Expected 16 results (default limit), got ${entries.length}`);
 
     fetchMocker.restore();
     envManager.restore();

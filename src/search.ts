@@ -12,6 +12,14 @@ import {
   createNoResultsMessage,
   type ErrorContext
 } from "./error-handler.js";
+import {
+  callTextEmbeddingService,
+  callVisionEmbeddingService,
+  cosineSimilarity,
+  downloadImageAsBase64,
+  type EmbeddingResult,
+  type VisionEmbeddingResult,
+} from "./embedding-service.js";
 
 export async function performWebSearch(
   mcpServer: McpServer,
@@ -316,8 +324,8 @@ export async function performImageSearch(
   }
 
   // Format image results with image-specific fields
-  // Note: SearXNG has no server-side limit parameter, so we truncate client-side
-  // We shuffle before slicing to get a random sample rather than always the top results
+  // Note: SearXNG returns ~100 results for image search with no server-side limit,
+  // so we truncate client-side to prevent context overflow.
   const results: Array<{
     title: string;
     img_src: string;
@@ -340,8 +348,16 @@ export async function performImageSearch(
       height: result.height || 0,
       score: result.score || 0,
     }))
-    .sort(() => Math.random() - 0)
-    .slice(0, limit);
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r);
+
+  // Fisher-Yates shuffle: O(n) uniform random permutation
+  for (let i = results.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [results[i], results[j]] = [results[j], results[i]];
+  }
+
+  results.splice(limit);
 
   if (results.length === 0) {
     logMessage(mcpServer, "info", `No images found for query: "${query}"`);
@@ -353,5 +369,255 @@ export async function performImageSearch(
 
   return results
     .map((r) => `Title: ${r.title}\nImage URL: ${r.img_src}\nThumbnail: ${r.thumbnail_src}\nSource URL: ${r.url}\nSource: ${r.source}\nDimensions: ${r.width}x${r.height}\nRelevance Score: ${r.score.toFixed(3)}`)
+    .join("\n\n");
+}
+
+interface VisionImageResult {
+  title: string;
+  img_src: string;
+  thumbnail_src: string;
+  url: string;
+  source: string;
+  engine: string;
+  width: number;
+  height: number;
+  score: number;
+  similarity: number;
+}
+
+/**
+ * Performs an image search using SearXNG with multimodal embedding-based filtering.
+ *
+ * Two-stage pipeline:
+ *   1. Text stage: Embed query + image titles, keep top K by cosine similarity
+ *   2. Vision stage: Download thumbnails, embed via vision tower, filter by similarity
+ *
+ * Requires EMBEDDING_SERVICE_URL pointing to a llama.cpp server running
+ * jina-embeddings-v5-omni-small-retrieval-GGUF.
+ */
+export async function performVisionImageSearch(
+  mcpServer: McpServer,
+  query: string,
+  pageno: number = 1,
+  topK: number = 25,
+  minScore: number = 0.15,
+  num: number = 16,
+  time_range?: string,
+  language: string = "all",
+  safesearch?: number
+) {
+  const startTime = Date.now();
+
+  const clampedTopK = Math.min(Math.max(5, topK), 100);
+  const clampedMinScore = Math.min(Math.max(0, minScore), 1);
+  const clampedNum = Math.min(Math.max(1, num), 100);
+
+  const searchParams = [
+    `page ${pageno}`,
+    `topK: ${clampedTopK}`,
+    `minScore: ${clampedMinScore}`,
+    `limit: ${clampedNum}`,
+    `lang: ${language}`,
+    time_range ? `time: ${time_range}` : null,
+    safesearch ? `safesearch: ${safesearch}` : null,
+  ].filter(Boolean).join(", ");
+
+  logMessage(mcpServer, "info", `Starting vision image search: "${query}" (${searchParams})`);
+
+  const validationError = validateEnvironment();
+  if (validationError) {
+    logMessage(mcpServer, "error", "Configuration invalid");
+    throw new MCPSearXNGError(validationError);
+  }
+
+  const searxngUrl = process.env.SEARXNG_URL!;
+  const parsedUrl = new URL(searxngUrl.endsWith("/") ? searxngUrl : searxngUrl + "/");
+  const url = new URL("search", parsedUrl);
+
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("pageno", pageno.toString());
+  url.searchParams.set("categories", "images");
+
+  if (time_range !== undefined && ["day", "month", "year"].includes(time_range)) {
+    url.searchParams.set("time_range", time_range);
+  }
+  if (language && language !== "all") {
+    url.searchParams.set("language", language);
+  }
+  if (safesearch !== undefined && [0, 1, 2].includes(safesearch)) {
+    url.searchParams.set("safesearch", safesearch.toString());
+  }
+
+  const requestOptions: RequestInit = { method: "GET" };
+  const proxyAgent = createProxyAgent(url.toString(), ProxyType.SEARCH);
+  const dispatcher = proxyAgent ?? createDefaultAgent();
+  if (dispatcher) {
+    (requestOptions as any).dispatcher = dispatcher;
+  }
+
+  const username = process.env.AUTH_USERNAME;
+  const password = process.env.AUTH_PASSWORD;
+  if (username && password) {
+    const base64Auth = Buffer.from(`${username}:${password}`).toString("base64");
+    requestOptions.headers = {
+      ...requestOptions.headers,
+      Authorization: `Basic ${base64Auth}`,
+    };
+  }
+
+  const userAgent = process.env.USER_AGENT;
+  if (userAgent) {
+    requestOptions.headers = {
+      ...requestOptions.headers,
+      "User-Agent": userAgent,
+    };
+  }
+
+  let response: Response;
+  try {
+    logMessage(mcpServer, "info", `Making request to: ${url.toString()}`);
+    response = await fetch(url.toString(), requestOptions);
+  } catch (error: any) {
+    logMessage(mcpServer, "error", `Network error during vision image search: ${error.message}`, { query, url: url.toString() });
+    const context: ErrorContext = {
+      url: url.toString(),
+      searxngUrl,
+      proxyAgent: !!dispatcher,
+      username,
+    };
+    throw createNetworkError(error, context);
+  }
+
+  if (!response.ok) {
+    let responseBody: string;
+    try {
+      responseBody = await response.text();
+    } catch {
+      responseBody = "[Could not read response body]";
+    }
+
+    const context: ErrorContext = { url: url.toString(), searxngUrl };
+    throw createServerError(response.status, response.statusText, responseBody, context);
+  }
+
+  let data: SearXNGImage;
+  try {
+    data = (await response.json()) as SearXNGImage;
+  } catch (error: any) {
+    let responseText: string;
+    try {
+      responseText = await response.text();
+    } catch {
+      responseText = "[Could not read response text]";
+    }
+
+    const context: ErrorContext = { url: url.toString() };
+    throw createJSONError(responseText, context);
+  }
+
+  if (!data.results || data.results.length === 0) {
+    const context: ErrorContext = { url: url.toString(), query };
+    throw createDataError(data, context);
+  }
+
+  // Stage 1: Text-based filtering via title embeddings
+  const queryEmbedding = await callTextEmbeddingService(`Query: ${query}`);
+
+  const titles = data.results
+    .map((r) => r.title || "")
+    .filter((t) => t.length > 0);
+
+  if (titles.length === 0) {
+    logMessage(mcpServer, "warning", "No titles available for text-stage filtering");
+  }
+
+  const titleEmbeddings = await callTextEmbeddingService(titles);
+
+  const scoredResults: Array<{ result: SearXNGImageResult; similarity: number }> = data.results
+    .filter((r) => r.title && r.title.length > 0)
+    .map((result, idx) => {
+      const titleSimilarity = titleEmbeddings[idx]
+        ? cosineSimilarity(queryEmbedding[0].embedding, titleEmbeddings[idx].embedding)
+        : 0;
+
+      return { result, similarity: titleSimilarity };
+    })
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, clampedTopK);
+
+  if (scoredResults.length === 0) {
+    logMessage(mcpServer, "info", `No images with titles found for query: "${query}"`);
+    return createNoResultsMessage(query);
+  }
+
+  logMessage(mcpServer, "info", `Text stage: ${data.results.length} results → ${scoredResults.length} candidates (topK=${clampedTopK})`);
+
+  // Stage 2: Vision-based filtering
+  const visionResults: VisionImageResult[] = [];
+
+  for (const scored of scoredResults) {
+    const thumbnailUrl = scored.result.thumbnail_src || scored.result.img_src;
+    if (!thumbnailUrl) {
+      logMessage(mcpServer, "debug", `Skipping ${scored.result.title}: no thumbnail URL`);
+      continue;
+    }
+
+    let imgBase64: string;
+    try {
+      imgBase64 = await downloadImageAsBase64(thumbnailUrl);
+    } catch (error: any) {
+      logMessage(mcpServer, "warning", `Failed to download image "${scored.result.title}": ${error.message}`);
+      continue;
+    }
+
+    let imgEmbedding: VisionEmbeddingResult;
+    try {
+      imgEmbedding = await callVisionEmbeddingService(imgBase64);
+    } catch (error: any) {
+      logMessage(mcpServer, "warning", `Failed to embed image "${scored.result.title}": ${error.message}`);
+      continue;
+    }
+
+    const imageSimilarity = cosineSimilarity(queryEmbedding[0].embedding, imgEmbedding.embedding);
+
+    if (imageSimilarity >= clampedMinScore) {
+      visionResults.push({
+        title: scored.result.title || "",
+        img_src: scored.result.img_src || "",
+        thumbnail_src: scored.result.thumbnail_src || "",
+        url: scored.result.url || "",
+        source: scored.result.source || "",
+        engine: scored.result.engine || "",
+        width: scored.result.width || 0,
+        height: scored.result.height || 0,
+        score: scored.result.score || 0,
+        similarity: imageSimilarity,
+      });
+    }
+  }
+
+  if (visionResults.length === 0) {
+    logMessage(mcpServer, "info", `No images passed vision similarity threshold (${clampedMinScore}) for query: "${query}"`);
+    return createNoResultsMessage(query);
+  }
+
+  // Sort by embedding similarity (descending), then by SearXNG score as tiebreaker
+  visionResults.sort((a, b) => b.similarity - a.similarity || b.score - a.score);
+
+  const finalResults = visionResults.slice(0, clampedNum);
+
+  const duration = Date.now() - startTime;
+  logMessage(
+    mcpServer,
+    "info",
+    `Vision image search completed: "${query}" (${searchParams}) - ${finalResults.length} results in ${duration}ms`
+  );
+
+  return finalResults
+    .map(
+      (r) =>
+        `Title: ${r.title}\nImage URL: ${r.img_src}\nThumbnail: ${r.thumbnail_src}\nSource URL: ${r.url}\nSource: ${r.source}\nDimensions: ${r.width}x${r.height}\nEmbedding Similarity: ${r.similarity.toFixed(4)}\nRelevance Score: ${r.score.toFixed(3)}`
+    )
     .join("\n\n");
 }
