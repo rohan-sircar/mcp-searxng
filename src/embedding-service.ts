@@ -5,8 +5,7 @@ const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "jinaai/jina-embeddings-v
 function logEmbedding(message: string, data?: any): void {
   const ts = new Date().toISOString();
   const preview = typeof data === "string" ? data.substring(0, 200) : "";
-  const line = `[embedding-service:${ts}] ${message}${preview ? " | " + preview : ""}\n`;
-  process.stderr.write(line);
+  console.log(`[embedding-service:${ts}] ${message}${preview ? " | " + preview : ""}`);
 }
 
 interface EmbeddingRequest {

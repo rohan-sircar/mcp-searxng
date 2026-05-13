@@ -26,7 +26,7 @@ const packageVersion = "1.0.3";
 export { packageVersion };
 
 function logStartup(message: string): void {
-  process.stderr.write(`[mcp-searxng:${new Date().toISOString()}] ${message}\n`);
+  console.log(`[mcp-searxng:${new Date().toISOString()}] ${message}`);
 }
 
 // Type guard for URL reading args
