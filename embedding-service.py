@@ -103,10 +103,22 @@ def _encode_text(text: str, is_query: bool = True) -> List[float]:
 
 def _encode_image(base64_str: str) -> List[float]:
     """Decode a base64 image string and encode it into an embedding vector."""
+    if not base64_str:
+        raise HTTPException(status_code=400, detail="Empty base64 image data")
+
     try:
         raw_bytes = base64.b64decode(base64_str)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {exc}")
+
+    if len(raw_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Decoded image data is empty")
+
+    if len(raw_bytes) > 50 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image data too large: {len(raw_bytes)} bytes (max 50MB)",
+        )
 
     try:
         image = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
@@ -115,8 +127,8 @@ def _encode_image(base64_str: str) -> List[float]:
             status_code=400, detail=f"Failed to decode image: {exc}"
         )
 
-    vec = _model.encode(image)
-    return vec.tolist()
+    vec = _model.encode([image])
+    return vec[0].tolist()
 
 
 # ---------------------------------------------------------------------------
@@ -133,9 +145,82 @@ async def create_embeddings(body: dict[str, Any]) -> dict[str, Any]:
     if _model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    logger.info("Received embeddings request: keys=%s model=%s", list(body.keys()), body.get("model", "<none>"))
+
     input_raw = body.get("input")
     if input_raw is None:
         raise HTTPException(status_code=400, detail="'input' field is required")
+
+    model_name: str = body.get("model", _MODEL_NAME)
+    prompt_name: str = body.get("prompt_name", "query")
+    is_query = prompt_name == "query"
+
+    items = _parse_input(input_raw)
+    embeddings: List[dict[str, Any]] = []
+
+    for idx, item in enumerate(items):
+        # --- Text input --------------------------------------------------
+        if item.get("type") == "text" or "text" in item and "image_url" not in item:
+            text = str(item["text"])
+            emb = _encode_text(text, is_query=is_query)
+            embeddings.append({
+                "index": idx,
+                "embedding": emb,
+                "object": "embedding",
+            })
+            continue
+
+        # --- Image input (OpenAI format: {"image_url": {"url": "data:image/...;base64,..."}})
+        if "image_url" in item:
+            url = item["image_url"]
+            if isinstance(url, dict):
+                url = url.get("url", "")
+            # Strip data URI prefix if present
+            if "," in url:
+                url = url.split(",", 1)[1]
+            emb = _encode_image(url)
+            embeddings.append({
+                "index": idx,
+                "embedding": emb,
+                "object": "embedding",
+            })
+            continue
+
+        # --- Fallback: try text first, then image_url --------------------
+        if "text" in item:
+            text = str(item["text"])
+            emb = _encode_text(text, is_query=is_query)
+            embeddings.append({
+                "index": idx,
+                "embedding": emb,
+                "object": "embedding",
+            })
+            continue
+
+        if "image_url" in item:
+            url = item["image_url"]
+            if isinstance(url, dict):
+                url = url.get("url", "")
+            if "," in url:
+                url = url.split(",", 1)[1]
+            emb = _encode_image(url)
+            embeddings.append({
+                "index": idx,
+                "embedding": emb,
+                "object": "embedding",
+            })
+            continue
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot determine modality for input item: {item}",
+        )
+
+    return {
+        "data": embeddings,
+        "model": model_name,
+        "object": "list",
+    }
 
     model_name: str = body.get("model", _MODEL_NAME)
     prompt_name: str = body.get("prompt_name", "query")
