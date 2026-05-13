@@ -525,6 +525,8 @@ export async function performVisionImageSearch(
   logMessage(mcpServer, "info", `Text embedding: calling embedding service for query "${query}"`);
   const queryEmbedding = await callTextEmbeddingService(`Query: ${query}`);
   logMessage(mcpServer, "info", `Text embedding: query embedding received, ${queryEmbedding[0].embedding.length} dimensions`);
+  const qPreview = `[${queryEmbedding[0].embedding.slice(0, 5).map(v => v.toFixed(4)).join(", ")}, ..., ${queryEmbedding[0].embedding.slice(-3).map(v => v.toFixed(4)).join(", ")}]`;
+  console.log(`[embedding-service:${new Date().toISOString()}] QUERY EMBEDDING PREVIEW: ${qPreview}`);
 
   const titles = data.results
     .map((r) => r.title || "")

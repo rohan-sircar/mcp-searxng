@@ -148,7 +148,8 @@ export async function callVisionEmbeddingService(
   }
 
   const embedding = Array.isArray(data[0].embedding[0]) ? data[0].embedding[0] : data[0].embedding;
-  logEmbedding("VISION EMBEDDING SUCCESS", `embeddingLen=${embedding.length}`);
+  const preview = `[${embedding.slice(0, 5).map(v => v.toFixed(4)).join(", ")}, ..., ${embedding.slice(-3).map(v => v.toFixed(4)).join(", ")}]`;
+  logEmbedding("VISION EMBEDDING SUCCESS", `embeddingLen=${embedding.length} preview=${preview}`);
   return { embedding, prompt: "", time_eval: 0, time_prompt: 0, tokens_count: 0 } as VisionEmbeddingResult;
 }
 
