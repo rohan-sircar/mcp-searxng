@@ -522,7 +522,9 @@ export async function performVisionImageSearch(
   }
 
   // Stage 1: Text-based filtering via title embeddings
+  logMessage(mcpServer, "info", `Text embedding: calling embedding service for query "${query}"`);
   const queryEmbedding = await callTextEmbeddingService(`Query: ${query}`);
+  logMessage(mcpServer, "info", `Text embedding: query embedding received, ${queryEmbedding[0].embedding.length} dimensions`);
 
   const titles = data.results
     .map((r) => r.title || "")
@@ -532,7 +534,9 @@ export async function performVisionImageSearch(
     logMessage(mcpServer, "warning", "No titles available for text-stage filtering");
   }
 
+  logMessage(mcpServer, "info", `Text embedding: calling embedding service for ${titles.length} titles`);
   const titleEmbeddings = await callTextEmbeddingService(titles);
+  logMessage(mcpServer, "info", `Text embedding: ${titleEmbeddings.length} title embeddings received`);
 
   const scoredResults: Array<{ result: SearXNGImageResult; similarity: number }> = data.results
     .filter((r) => r.title && r.title.length > 0)
@@ -555,8 +559,11 @@ export async function performVisionImageSearch(
 
   // Stage 2: Vision-based filtering
   const visionResults: VisionImageResult[] = [];
+  logMessage(mcpServer, "info", `Vision stage: processing ${scoredResults.length} candidates`);
 
-  for (const scored of scoredResults) {
+  for (let i = 0; i < scoredResults.length; i++) {
+    const scored = scoredResults[i];
+    logMessage(mcpServer, "info", `Vision stage: processing candidate ${i + 1}/${scoredResults.length}: "${scored.result.title}"`);
     const thumbnailUrl = scored.result.thumbnail_src || scored.result.img_src;
     if (!thumbnailUrl) {
       logMessage(mcpServer, "debug", `Skipping ${scored.result.title}: no thumbnail URL`);
@@ -566,6 +573,7 @@ export async function performVisionImageSearch(
     let imgBase64: string;
     try {
       imgBase64 = await downloadImageAsBase64(thumbnailUrl);
+      logMessage(mcpServer, "info", `Vision stage: downloaded image (${imgBase64.length} chars base64)`);
     } catch (error: any) {
       logMessage(mcpServer, "warning", `Failed to download image "${scored.result.title}": ${error.message}`);
       continue;
@@ -574,12 +582,14 @@ export async function performVisionImageSearch(
     let imgEmbedding: VisionEmbeddingResult;
     try {
       imgEmbedding = await callVisionEmbeddingService(imgBase64);
+      logMessage(mcpServer, "info", `Vision stage: image embedding received (${imgEmbedding.embedding.length} dimensions)`);
     } catch (error: any) {
       logMessage(mcpServer, "warning", `Failed to embed image "${scored.result.title}": ${error.message}`);
       continue;
     }
 
     const imageSimilarity = cosineSimilarity(queryEmbedding[0].embedding, imgEmbedding.embedding);
+    logMessage(mcpServer, "info", `Vision stage: similarity=${imageSimilarity.toFixed(4)} (threshold=${clampedMinScore})`);
 
     if (imageSimilarity >= clampedMinScore) {
       visionResults.push({
@@ -595,7 +605,10 @@ export async function performVisionImageSearch(
         similarity: imageSimilarity,
       });
     }
+    logMessage(mcpServer, "info", `Vision stage: candidate ${i + 1}/${scoredResults.length} processed (${imageSimilarity >= clampedMinScore ? "PASSED" : "REJECTED"})`);
   }
+
+  logMessage(mcpServer, "info", `Vision stage: ${visionResults.length} of ${scoredResults.length} candidates passed threshold`);
 
   if (visionResults.length === 0) {
     logMessage(mcpServer, "info", `No images passed vision similarity threshold (${clampedMinScore}) for query: "${query}"`);
