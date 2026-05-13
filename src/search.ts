@@ -538,17 +538,26 @@ export async function performVisionImageSearch(
   const titleEmbeddings = await callTextEmbeddingService(titles);
   logMessage(mcpServer, "info", `Text embedding: ${titleEmbeddings.length} title embeddings received`);
 
-  const scoredResults: Array<{ result: SearXNGImageResult; similarity: number }> = data.results
+  const allTextSimilarities: Array<{ title: string; similarity: number }> = data.results
     .filter((r) => r.title && r.title.length > 0)
     .map((result, idx) => {
       const titleSimilarity = titleEmbeddings[idx]
         ? cosineSimilarity(queryEmbedding[0].embedding, titleEmbeddings[idx].embedding)
         : 0;
 
-      return { result, similarity: titleSimilarity };
-    })
+      return { title: result.title || "", similarity: titleSimilarity };
+    });
+
+  logMessage(mcpServer, "info", `Text stage similarities: ${allTextSimilarities.map(s => `"${s.title}": ${s.similarity.toFixed(4)}`).join(", ")}`);
+
+  const scoredResults: Array<{ result: SearXNGImageResult; similarity: number }> = allTextSimilarities
     .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, clampedTopK);
+    .slice(0, clampedTopK)
+    .map(s => {
+      const match = data.results.find(r => r.title === s.title);
+      return match ? { result: match, similarity: s.similarity } : null;
+    })
+    .filter((r): r is { result: SearXNGImageResult; similarity: number } => r !== null);
 
   if (scoredResults.length === 0) {
     logMessage(mcpServer, "info", `No images with titles found for query: "${query}"`);
@@ -559,6 +568,7 @@ export async function performVisionImageSearch(
 
   // Stage 2: Vision-based filtering
   const visionResults: VisionImageResult[] = [];
+  const allVisionSimilarities: Array<{ title: string; similarity: number }> = [];
   logMessage(mcpServer, "info", `Vision stage: processing ${scoredResults.length} candidates`);
 
   for (let i = 0; i < scoredResults.length; i++) {
@@ -589,6 +599,7 @@ export async function performVisionImageSearch(
     }
 
     const imageSimilarity = cosineSimilarity(queryEmbedding[0].embedding, imgEmbedding.embedding);
+    allVisionSimilarities.push({ title: scored.result.title || "", similarity: imageSimilarity });
     logMessage(mcpServer, "info", `Vision stage: similarity=${imageSimilarity.toFixed(4)} (threshold=${clampedMinScore})`);
 
     if (imageSimilarity >= clampedMinScore) {
@@ -607,6 +618,8 @@ export async function performVisionImageSearch(
     }
     logMessage(mcpServer, "info", `Vision stage: candidate ${i + 1}/${scoredResults.length} processed (${imageSimilarity >= clampedMinScore ? "PASSED" : "REJECTED"})`);
   }
+
+  logMessage(mcpServer, "info", `Vision stage similarities: ${allVisionSimilarities.map(s => `"${s.title}": ${s.similarity.toFixed(4)}`).join(", ")}`);
 
   logMessage(mcpServer, "info", `Vision stage: ${visionResults.length} of ${scoredResults.length} candidates passed threshold`);
 
