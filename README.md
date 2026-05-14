@@ -4,6 +4,75 @@ An [MCP server](https://modelcontextprotocol.io/introduction) that integrates th
 
 [![https://nodei.co/npm/mcp-searxng.png?downloads=true&downloadRank=true&stars=true](https://nodei.co/npm/mcp-searxng.png?downloads=true&downloadRank=true&stars=true)](https://www.npmjs.com/package/mcp-searxng)
 
+## Vision Image Search (Fork Addition)
+
+This fork adds **vision-based image search** powered by the [jina-embeddings-v5-omni-nano-retrieval](https://huggingface.co/jinaai/jina-embeddings-v5-omni-nano-retrieval) model. Unlike traditional keyword-based image search, this tool uses AI embeddings to understand how semantically related a text query is to the actual visual content of each image.
+
+### How It Works
+
+There are **two stages** of cosine similarity comparison, both against the same query embedding:
+
+**Stage 1: Text filtering (title vs. query)**
+- Query embedding (text) vs. each image's title text embedding
+- Narrows ~100 SearXNG results down to top 25 candidates
+
+**Stage 2: Vision filtering (image vs. query)** — this is where the embedding service matters
+- Query embedding (text, e.g. "golden retriever puppy") vs. each candidate image's visual embedding (actual pixels)
+- Filters by minScore (default 0.15), ranks by similarity descending
+
+So the cosine similarity measures **how semantically related the user's text query is to each image's visual content**. Higher score = better match. The final results are sorted by this vision-stage similarity, with SearXNG's relevance score as a tiebreaker.
+
+### Embedding Service Setup
+
+Vision image search requires a separate Python FastAPI server running `jina-embeddings-v5-omni-nano-retrieval`. It provides an OpenAI-compatible `/v1/embeddings` endpoint for both text and image embeddings.
+
+**Quick start (Docker on ROCm):**
+
+```bash
+docker build -t embedding-service -f Dockerfile.embedding .
+
+docker run -d --gpus all \
+  -p 8080:8080 \
+  -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+  -e EMBEDDING_MODEL=jinaai/jina-embeddings-v5-omni-nano-retrieval \
+  -e EMBEDDING_MODALITY=vision \
+  -e EMBEDDING_PORT=8080 \
+  embedding-service
+```
+
+**Quick start (local Python):**
+
+```bash
+python3 -m venv embedding-venv
+source embedding-venv/bin/activate
+
+# Install PyTorch with ROCm support (for AMD GPU)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2
+pip install -r requirements.txt
+
+python embedding-service.py --modality vision --port 8080
+```
+
+Then set `EMBEDDING_SERVICE_URL=http://localhost:8080/v1` in your MCP client config.
+
+Full setup details: [CONFIGURATION.md](CONFIGURATION.md) — Embedding Service section.
+
+### New Tool
+
+- **searxng_image_search_vision**
+  - Execute vision-powered image searches using AI embeddings to match queries against actual image content
+  - Combines SearXNG's web indexing with neural visual understanding for semantically relevant results
+  - Inputs:
+    - `query` (string): The search query for images
+    - `pageno` (number, optional): Search page number, starts at 1 (default 1)
+    - `num` (number, optional): Maximum number of results to return. Default: 16, Max: 100
+    - `minScore` (number, optional): Minimum cosine similarity threshold for vision-stage filtering. Results below this threshold are excluded. Default: 0.15, Range: 0-1
+    - `time_range` (string, optional): Filter results by time range - one of: "day", "month", "year" (default: none)
+    - `language` (string, optional): Language code for results (e.g., "en", "fr", "de") or "all" (default: "all")
+    - `safesearch` (number, optional): Safe search filter level (0: None, 1: Moderate, 2: Strict) (default: 0)
+
+## Quick Start
+
 [![https://badgen.net/docker/pulls/isokoliuk/mcp-searxng](https://badgen.net/docker/pulls/isokoliuk/mcp-searxng)](https://hub.docker.com/r/isokoliuk/mcp-searxng)
 
 <a href="https://glama.ai/mcp/servers/0j7jjyt7m9"><img width="380" height="200" src="https://glama.ai/mcp/servers/0j7jjyt7m9/badge" alt="SearXNG Server MCP server" /></a>
