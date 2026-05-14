@@ -575,13 +575,12 @@ export async function performVisionImageSearch(
   const allVisionSimilarities: Array<{ title: string; similarity: number }> = [];
   logMessage(mcpServer, "info", `Vision stage: processing ${scoredResults.length} candidates`);
 
-  for (let i = 0; i < scoredResults.length; i++) {
-    const scored = scoredResults[i];
-    logMessage(mcpServer, "info", `Vision stage: processing candidate ${i + 1}/${scoredResults.length}: "${scored.result.title}"`);
+  const visionTasks = scoredResults.map(async (scored) => {
+    logMessage(mcpServer, "info", `Vision stage: processing candidate ${scoredResults.indexOf(scored) + 1}/${scoredResults.length}: "${scored.result.title}"`);
     const thumbnailUrl = scored.result.thumbnail_src || scored.result.img_src;
     if (!thumbnailUrl) {
       logMessage(mcpServer, "debug", `Skipping ${scored.result.title}: no thumbnail URL`);
-      continue;
+      return null;
     }
 
     let imgBase64: string;
@@ -590,7 +589,7 @@ export async function performVisionImageSearch(
       logMessage(mcpServer, "info", `Vision stage: downloaded image (${imgBase64.length} chars base64)`);
     } catch (error: any) {
       logMessage(mcpServer, "warning", `Failed to download image "${scored.result.title}": ${error.message}`);
-      continue;
+      return null;
     }
 
     let imgEmbedding: VisionEmbeddingResult;
@@ -599,7 +598,7 @@ export async function performVisionImageSearch(
       logMessage(mcpServer, "info", `Vision stage: image embedding received (${imgEmbedding.embedding.length} dimensions)`);
     } catch (error: any) {
       logMessage(mcpServer, "warning", `Failed to embed image "${scored.result.title}": ${error.message}`);
-      continue;
+      return null;
     }
 
     const imageSimilarity = cosineSimilarity(queryEmbedding[0].embedding, imgEmbedding.embedding);
@@ -607,7 +606,7 @@ export async function performVisionImageSearch(
     logMessage(mcpServer, "info", `Vision stage: similarity=${imageSimilarity.toFixed(4)} (threshold=${clampedMinScore})`);
 
     if (imageSimilarity >= clampedMinScore) {
-      visionResults.push({
+      return {
         title: scored.result.title || "",
         img_src: scored.result.img_src || "",
         thumbnail_src: scored.result.thumbnail_src || "",
@@ -618,9 +617,18 @@ export async function performVisionImageSearch(
         height: scored.result.height || 0,
         score: scored.result.score || 0,
         similarity: imageSimilarity,
-      });
+      };
     }
-    logMessage(mcpServer, "info", `Vision stage: candidate ${i + 1}/${scoredResults.length} processed (${imageSimilarity >= clampedMinScore ? "PASSED" : "REJECTED"})`);
+    logMessage(mcpServer, "info", `Vision stage: candidate ${scoredResults.indexOf(scored) + 1}/${scoredResults.length} processed (REJECTED)`);
+    return null;
+  });
+
+  const visionOutputs = await Promise.all(visionTasks);
+  for (const output of visionOutputs) {
+    if (output !== null) {
+      visionResults.push(output);
+      logMessage(mcpServer, "info", `Vision stage: candidate processed (PASSED)`);
+    }
   }
 
   const visionSimStr = allVisionSimilarities.map(s => `"${s.title}": ${s.similarity.toFixed(4)}`).join(", ");
